@@ -266,7 +266,7 @@ fun PlayerScreen(ui: PlayerUi, sleepChoice: Int, sleepLeftMs: Long, libraryCount
                 }
                 Spacer(Modifier.height(10.dp))
                 Text("${ui.count}", style = K.value.copy(fontSize = 20.sp))
-                Text("tracks in queue", style = K.label)
+                Text("tracks · tap to edit", style = K.label)
             }
         }
 

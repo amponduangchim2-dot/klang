@@ -33,7 +33,7 @@ import app.klang.ui.components.LcdBox
 import app.klang.ui.components.TextKey
 import app.klang.ui.components.Tile
 
-enum class Screen { Player, Library, Queue, Eq }
+enum class Screen { Player, Library, LibraryAdd, Queue, Eq }
 
 @Composable
 fun ScreenHeader(title: String, model: String, onBack: () -> Unit) {
@@ -98,9 +98,11 @@ fun LibraryScreen(
     onPlay: (List<Song>, Int) -> Unit,
     onShuffleAll: () -> Unit,
     onBack: () -> Unit,
+    addMode: Boolean = false,
+    onAdd: (List<Song>) -> Unit = {},
 ) {
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        ScreenHeader("local music", "library", onBack)
+        ScreenHeader("local music", if (addMode) "tap a song to add it" else "library", onBack)
         if (!hasPermission) {
             Tile(Modifier.fillMaxWidth()) {
                 Text("Klang needs permission to see the music on this phone.", style = K.body)
@@ -115,43 +117,21 @@ fun LibraryScreen(
                 Text("${songs.size}", style = K.value.copy(fontSize = 22.sp))
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                TextKey("play all", { onPlay(songs, 0) }, Modifier.fillMaxWidth().height(36.dp), orange = true)
-                TextKey("shuffle all", onShuffleAll, Modifier.fillMaxWidth().height(36.dp))
+                if (addMode) {
+                    TextKey("add all", { onAdd(songs) }, Modifier.fillMaxWidth().height(36.dp), orange = true)
+                    TextKey("done", onBack, Modifier.fillMaxWidth().height(36.dp))
+                } else {
+                    TextKey("play all", { onPlay(songs, 0) }, Modifier.fillMaxWidth().height(36.dp), orange = true)
+                    TextKey("shuffle all", onShuffleAll, Modifier.fillMaxWidth().height(36.dp))
+                }
             }
         }
         if (songs.isEmpty()) {
             Tile(Modifier.fillMaxWidth()) { Text("No music found on this phone.", style = K.body) }
         } else {
             Tile(Modifier.fillMaxWidth().weight(1f), padding = 8.dp) {
-                SongLcdList(songs, currentUri, { onPlay(songs, it) }, Modifier.fillMaxSize())
+                SongLcdList(songs, currentUri, { if (addMode) onAdd(listOf(songs[it])) else onPlay(songs, it) }, Modifier.fillMaxSize())
             }
-        }
-    }
-}
-
-@Composable
-fun QueueScreen(queue: List<Song>, currentIndex: Int, currentUri: String?, onPick: (Int) -> Unit, onBack: () -> Unit, onOpenLibrary: () -> Unit) {
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        ScreenHeader("current playlist", "list 1", onBack)
-        if (queue.isEmpty()) {
-            Tile(Modifier.fillMaxWidth()) {
-                Text("The playlist is empty.", style = K.body)
-                Spacer(Modifier.height(10.dp))
-                TextKey("open library", onOpenLibrary, Modifier.fillMaxWidth().height(44.dp), orange = true)
-            }
-            return@Column
-        }
-        val total = queue.sumOf { it.durationMs }
-        Tile(Modifier.fillMaxWidth().weight(1f), padding = 8.dp) {
-            Row(Modifier.padding(horizontal = 4.dp, vertical = 2.dp)) {
-                Text("${queue.size} tracks", style = K.label, modifier = Modifier.weight(1f))
-                Text("total ${formatTime(total)}", style = K.value)
-            }
-            Spacer(Modifier.height(6.dp))
-            SongLcdList(queue, currentUri, onPick, Modifier.fillMaxSize(), scrollTo = currentIndex)
-        }
-        Tile(Modifier.fillMaxWidth()) {
-            Text("add · rem · sel · misc · list editing arrives in round 2", style = K.label)
         }
     }
 }

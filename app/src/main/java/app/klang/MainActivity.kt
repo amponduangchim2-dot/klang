@@ -41,10 +41,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import app.klang.ui.EqActions
 import app.klang.ui.EqScreen
 import app.klang.ui.K
+import app.klang.ui.PlaylistActions
+import app.klang.ui.PlaylistScreen
 import app.klang.ui.LibraryScreen
 import app.klang.ui.PlayerActions
 import app.klang.ui.PlayerScreen
-import app.klang.ui.QueueScreen
 import app.klang.ui.Screen
 
 class MainActivity : ComponentActivity() {
@@ -64,6 +65,25 @@ class MainActivity : ComponentActivity() {
         startActivity(Intent.createChooser(send, "Share preset"))
     }
 
+    private fun shareFile(file: java.io.File, mime: String, text: String, title: String) {
+        val uri = FileProvider.getUriForFile(this, "$packageName.files", file)
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = mime
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_TEXT, text)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(Intent.createChooser(send, title))
+    }
+
+    private fun shareText(text: String, title: String) {
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        startActivity(Intent.createChooser(send, title))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.light(AColor.TRANSPARENT, AColor.TRANSPARENT),
@@ -80,6 +100,19 @@ class MainActivity : ComponentActivity() {
             val sleepLeft by vm.sleepLeftMs.collectAsStateWithLifecycle()
             val eq by vm.eq.collectAsStateWithLifecycle()
             val message by vm.message.collectAsStateWithLifecycle()
+            val selection by vm.selection.collectAsStateWithLifecycle()
+            val favorites by vm.favorites.collectAsStateWithLifecycle()
+            val listName by vm.listName.collectAsStateWithLifecycle()
+            val savedNames by vm.savedNames.collectAsStateWithLifecycle()
+            val filesLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+                if (uris.isNotEmpty()) vm.addDocuments(uris)
+            }
+            val folderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+                if (uri != null) vm.addFolder(uri)
+            }
+            val m3uLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                if (uri != null) vm.importM3u(uri, append = false)
+            }
             LaunchedEffect(message) {
                 message?.let {
                     Toast.makeText(this@MainActivity, it, Toast.LENGTH_LONG).show()
@@ -133,7 +166,9 @@ class MainActivity : ComponentActivity() {
                 if (hasPermission) vm.loadLibrary() else askPermission()
             }
 
-            BackHandler(enabled = screen != Screen.Player) { screen = Screen.Player }
+            BackHandler(enabled = screen != Screen.Player) {
+                screen = if (screen == Screen.LibraryAdd) Screen.Queue else Screen.Player
+            }
 
             val actions = remember(vm) {
                 PlayerActions(
@@ -154,7 +189,50 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
-            val currentUri = queue.getOrNull(ui.index)?.uri
+            val currentUri = queue.getOrNull(ui.index)?.song?.uri
+
+            val playlistActions = remember(vm) {
+                PlaylistActions(
+                    back = { screen = Screen.Player },
+                    tap = { key ->
+                        val sel = vm.selection.value
+                        if (sel.size == 1 && key in sel) vm.playEntry(key) else vm.select(key)
+                    },
+                    longPress = vm::toggleSelect,
+                    toggleFavorite = vm::toggleFavorite,
+                    addUrl = vm::addUrl,
+                    addFolder = { folderLauncher.launch(null) },
+                    addFiles = { filesLauncher.launch(arrayOf("audio/*")) },
+                    addFromLibrary = { screen = Screen.LibraryAdd },
+                    removeSelected = vm::removeSelected,
+                    crop = vm::cropToSelection,
+                    removeAll = vm::removeAll,
+                    removeDuplicates = vm::removeDuplicates,
+                    removeUnplayable = vm::removeUnplayable,
+                    selectAll = vm::selectAll,
+                    selectNone = vm::selectNone,
+                    invert = vm::invertSelection,
+                    sortTitle = vm::sortByTitle,
+                    sortLength = vm::sortByLength,
+                    reverse = vm::reverseList,
+                    randomize = vm::randomizeList,
+                    rename = vm::renameEntry,
+                    needOne = { Toast.makeText(this@MainActivity, "Select one song first", Toast.LENGTH_SHORT).show() },
+                    newList = vm::newList,
+                    saveList = vm::saveList,
+                    loadList = vm::loadList,
+                    deleteList = vm::deleteList,
+                    importM3u = { m3uLauncher.launch(arrayOf("audio/x-mpegurl", "audio/mpegurl", "application/x-mpegurl", "application/vnd.apple.mpegurl", "*/*")) },
+                    shareM3u = {
+                        vm.playlistFileForSharing()?.let { f ->
+                            shareFile(f, "audio/x-mpegurl", "${f.nameWithoutExtension}: a playlist. Open it with Klang or Winamp.", "Share playlist")
+                        }
+                    },
+                    shareLinks = { shareText(vm.playlistLinksText(), "Share playlist") },
+                    previous = vm::previous,
+                    togglePlay = vm::togglePlay,
+                )
+            }
 
             // Keep the device face in proportion: cap the system font scale at 1.0
             // (the product design has fixed text sizes, like printed labels).
@@ -197,13 +275,26 @@ class MainActivity : ComponentActivity() {
                             )
                         })
                     }
-                    Screen.Queue -> QueueScreen(
+                    Screen.LibraryAdd -> LibraryScreen(
+                        songs = songs,
+                        hasPermission = hasPermission,
+                        currentUri = currentUri,
+                        onAskPermission = askPermission,
+                        onPlay = { _, _ -> },
+                        onShuffleAll = {},
+                        onBack = { screen = Screen.Queue },
+                        addMode = true,
+                        onAdd = { vm.appendSongs(it) },
+                    )
+                    Screen.Queue -> PlaylistScreen(
                         queue = queue,
                         currentIndex = ui.index,
-                        currentUri = currentUri,
-                        onPick = { vm.playQueueIndex(it) },
-                        onBack = { screen = Screen.Player },
-                        onOpenLibrary = { screen = Screen.Library },
+                        selection = selection,
+                        favorites = favorites,
+                        listName = listName,
+                        savedNames = savedNames,
+                        ui = ui,
+                        a = playlistActions,
                     )
                 }
             }

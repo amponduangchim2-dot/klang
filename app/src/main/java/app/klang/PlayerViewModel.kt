@@ -20,6 +20,14 @@ import app.klang.library.LocalMusic
 import org.json.JSONArray
 import org.json.JSONObject
 import app.klang.library.Song
+import app.klang.playlist.M3u
+import app.klang.playlist.QueueEntry
+import app.klang.playlist.SavedLists
+import app.klang.playlist.audioInTree
+import app.klang.playlist.isPlayable
+import app.klang.playlist.keepAccess
+import app.klang.playlist.songFromDocument
+import app.klang.playlist.songFromUrl
 import app.klang.playback.AudioEngine
 import app.klang.playback.PlaybackService
 import com.google.common.util.concurrent.ListenableFuture
@@ -78,8 +86,23 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private val _songs = MutableStateFlow<List<Song>>(emptyList())
     val songs: StateFlow<List<Song>> = _songs
 
-    private val _queue = MutableStateFlow<List<Song>>(emptyList())
-    val queue: StateFlow<List<Song>> = _queue
+    private val _queue = MutableStateFlow<List<QueueEntry>>(emptyList())
+    val queue: StateFlow<List<QueueEntry>> = _queue
+    private var nextKey = 1L
+    private fun entry(s: Song) = QueueEntry(nextKey++, s)
+
+    private val _selection = MutableStateFlow<Set<Long>>(emptySet())
+    val selection: StateFlow<Set<Long>> = _selection
+
+    private val _favorites = MutableStateFlow<Set<String>>(emptySet())
+    val favorites: StateFlow<Set<String>> = _favorites
+
+    private val savedLists = SavedLists(app)
+    private val _savedNames = MutableStateFlow<List<String>>(emptyList())
+    val savedNames: StateFlow<List<String>> = _savedNames
+
+    private val _listName = MutableStateFlow("list 1")
+    val listName: StateFlow<String> = _listName
 
     private val _sleep = MutableStateFlow(0)
     val sleepChoice: StateFlow<Int> = _sleep
@@ -128,10 +151,15 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             presetName = prefs.getString("eqPreset", "Flat"),
             mine = loadMine(),
         )
+        _favorites.value = prefs.getStringSet("favorites", emptySet())!!.toSet()
+        _savedNames.value = savedLists.names()
+        _listName.value = prefs.getString("listName", "list 1")!!
         connect()
         viewModelScope.launch {
+            var tick = 0
             while (true) {
                 refresh()
+                if (++tick % 20 == 0) saveQueueState()
                 delay(250)
             }
         }
@@ -153,6 +181,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                 2 -> Player.REPEAT_MODE_ONE
                 else -> Player.REPEAT_MODE_OFF
             }
+            restoreQueue(c)
             refresh()
         }, ContextCompat.getMainExecutor(ctx))
     }
@@ -166,8 +195,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun currentSong(): Song? {
         val c = controller ?: return null
-        val id = c.currentMediaItem?.mediaId ?: return null
-        return _queue.value.firstOrNull { it.uri == id } ?: _songs.value.firstOrNull { it.uri == id }
+        return _queue.value.getOrNull(c.currentMediaItemIndex)?.song
     }
 
     private fun refresh() {
@@ -229,10 +257,12 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     /** Replace the queue with [list] and start playing at [start]. */
     fun playList(list: List<Song>, start: Int) {
         val c = controller ?: return
-        _queue.value = list
+        _queue.value = list.map { entry(it) }
+        _selection.value = emptySet()
         c.setMediaItems(list.map { it.toItem() }, start.coerceIn(0, (list.size - 1).coerceAtLeast(0)), 0L)
         c.prepare()
         c.play()
+        saveQueueState()
     }
 
     fun playQueueIndex(i: Int) {
@@ -483,6 +513,251 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         _eq.value = _eq.value.copy(bands = bands, preamp = AudioEngine.preampDb, presetName = name)
     }
 
+    // ---- playlist editing ----
+    // Every edit is applied to both [_queue] and the player timeline, in the same order.
+
+    private fun app() = getApplication<Application>()
+
+    private fun setQueue(list: List<QueueEntry>) {
+        _queue.value = list
+        _selection.value = _selection.value.filter { k -> list.any { it.key == k } }.toSet()
+        saveQueueState()
+    }
+
+    fun appendSongs(songs: List<Song>, playNow: Boolean = false) {
+        if (songs.isEmpty()) return
+        val c = controller ?: return
+        val start = _queue.value.size
+        setQueue(_queue.value + songs.map { entry(it) })
+        c.addMediaItems(songs.map { it.toItem() })
+        if (c.playbackState == Player.STATE_IDLE) c.prepare()
+        if (playNow) { c.seekToDefaultPosition(start); c.play() }
+        _message.value = "Added ${songs.size} song(s)"
+    }
+
+    fun addUrl(url: String): String? {
+        val u = url.trim()
+        if (!u.startsWith("http://") && !u.startsWith("https://")) return "Type a link that starts with http:// or https://"
+        appendSongs(listOf(songFromUrl(u)))
+        return null
+    }
+
+    fun addDocuments(uris: List<Uri>) {
+        viewModelScope.launch {
+            val songs = withContext(Dispatchers.IO) {
+                uris.map { keepAccess(app(), it); songFromDocument(app(), it) }
+            }
+            appendSongs(songs)
+        }
+    }
+
+    fun addFolder(tree: Uri) {
+        viewModelScope.launch {
+            _message.value = "Adding…"
+            val songs = withContext(Dispatchers.IO) {
+                keepAccess(app(), tree)
+                audioInTree(app(), tree).map { songFromDocument(app(), it) }
+                    .sortedWith(compareBy({ it.album.lowercase() }, { it.title.lowercase() }))
+            }
+            if (songs.isEmpty()) _message.value = "No music found in that folder." else appendSongs(songs)
+        }
+    }
+
+    // selection
+    fun select(key: Long) { _selection.value = setOf(key) }
+    fun toggleSelect(key: Long) { _selection.value = _selection.value.let { if (key in it) it - key else it + key } }
+    fun selectAll() { _selection.value = _queue.value.map { it.key }.toSet() }
+    fun selectNone() { _selection.value = emptySet() }
+    fun invertSelection() { _selection.value = _queue.value.map { it.key }.toSet() - _selection.value }
+
+    fun playEntry(key: Long) {
+        val i = _queue.value.indexOfFirst { it.key == key }
+        if (i >= 0) playQueueIndex(i)
+    }
+
+    /** Removes the entries whose keys are in [keys], keeping playback going when possible. */
+    private fun removeKeys(keys: Set<Long>) {
+        if (keys.isEmpty()) return
+        val c = controller ?: return
+        val list = _queue.value
+        // remove from the end so indices stay valid
+        for (i in list.indices.reversed()) if (list[i].key in keys) c.removeMediaItem(i)
+        setQueue(list.filterNot { it.key in keys })
+    }
+
+    fun removeSelected() {
+        val n = _selection.value.size
+        if (n == 0) { _message.value = "Select songs first (tap, or long-press for more)"; return }
+        removeKeys(_selection.value); _message.value = "Removed $n"
+    }
+
+    fun cropToSelection() {
+        if (_selection.value.isEmpty()) { _message.value = "Select the songs to keep first"; return }
+        removeKeys(_queue.value.map { it.key }.toSet() - _selection.value)
+    }
+
+    fun removeAll() {
+        val c = controller ?: return
+        c.clearMediaItems()
+        setQueue(emptyList())
+    }
+
+    fun removeDuplicates() {
+        val seen = HashSet<String>()
+        val dup = _queue.value.filterNot { seen.add(it.song.uri) }.map { it.key }.toSet()
+        removeKeys(dup)
+        _message.value = if (dup.isEmpty()) "No duplicate entries" else "Removed ${dup.size} duplicate(s)"
+    }
+
+    fun removeUnplayable() {
+        viewModelScope.launch {
+            val bad = withContext(Dispatchers.IO) { _queue.value.filterNot { isPlayable(app(), it.song) }.map { it.key }.toSet() }
+            removeKeys(bad)
+            _message.value = if (bad.isEmpty()) "Every entry can be played" else "Removed ${bad.size} unplayable entr${if (bad.size == 1) "y" else "ies"}"
+        }
+    }
+
+    /** Reorders the queue to [target] using moves, so the current song keeps playing. */
+    private fun applyOrder(target: List<QueueEntry>) {
+        val c = controller ?: return
+        val work = _queue.value.toMutableList()
+        for (i in target.indices) {
+            val j = work.indexOfFirst { it.key == target[i].key }
+            if (j != i && j >= 0) {
+                c.moveMediaItem(j, i)
+                work.add(i, work.removeAt(j))
+            }
+        }
+        setQueue(work)
+    }
+
+    fun sortByTitle() = applyOrder(_queue.value.sortedWith(compareBy({ it.song.artist.lowercase() }, { it.song.title.lowercase() })))
+    fun sortByLength() = applyOrder(_queue.value.sortedBy { it.song.durationMs })
+    fun reverseList() = applyOrder(_queue.value.reversed())
+    fun randomizeList() = applyOrder(_queue.value.shuffled())
+
+    fun renameEntry(key: Long, title: String): String? {
+        val t = title.trim()
+        if (t.isEmpty()) return "Type a name"
+        val c = controller ?: return null
+        val i = _queue.value.indexOfFirst { it.key == key }
+        if (i < 0) return null
+        val e = _queue.value[i]
+        val ne = e.copy(song = e.song.copy(title = t))
+        c.replaceMediaItem(i, ne.song.toItem())
+        setQueue(_queue.value.toMutableList().also { it[i] = ne })
+        return null
+    }
+
+    fun toggleFavorite(uri: String) {
+        val f = _favorites.value.let { if (uri in it) it - uri else it + uri }
+        _favorites.value = f
+        prefs.edit().putStringSet("favorites", f).apply()
+    }
+
+    // lists
+    fun newList(name: String): String? {
+        val n = name.trim().ifEmpty { return "Type a name" }
+        removeAll()
+        _listName.value = n
+        prefs.edit().putString("listName", n).apply()
+        return null
+    }
+
+    fun saveList(name: String): String? {
+        val n = name.trim().ifEmpty { return "Playlist name:" }
+        if (_queue.value.isEmpty()) return "The playlist is empty"
+        savedLists.save(n, _queue.value.map { it.song })
+        _savedNames.value = savedLists.names()
+        _listName.value = n
+        prefs.edit().putString("listName", n).apply()
+        _message.value = "Saved as \"$n\""
+        return null
+    }
+
+    fun loadList(name: String, append: Boolean) {
+        val text = savedLists.read(name) ?: return
+        val (songs, missing) = M3u.parse(text, _songs.value)
+        if (songs.isEmpty()) { _message.value = "That playlist has no songs Klang can play."; return }
+        if (append) appendSongs(songs) else {
+            playList(songs, 0)
+            _listName.value = name
+            prefs.edit().putString("listName", name).apply()
+        }
+        if (missing > 0) _message.value = "$missing song(s) could not be found and were left out."
+    }
+
+    fun deleteList(name: String) {
+        savedLists.delete(name)
+        _savedNames.value = savedLists.names()
+    }
+
+    fun importM3u(uri: Uri, append: Boolean) {
+        viewModelScope.launch {
+            val text = withContext(Dispatchers.IO) {
+                runCatching { app().contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) } }.getOrNull()
+            }
+            if (text == null) { _message.value = "Could not open that file"; return@launch }
+            val (songs, missing) = M3u.parse(text, _songs.value)
+            if (songs.isEmpty()) { _message.value = "That playlist has no songs Klang can play."; return@launch }
+            if (append) appendSongs(songs) else playList(songs, 0)
+            if (missing > 0) _message.value = "$missing song(s) could not be found and were left out."
+        }
+    }
+
+    /** Writes the current playlist to a shareable .m3u file in the cache. */
+    fun playlistFileForSharing(): java.io.File? {
+        if (_queue.value.isEmpty()) { _message.value = "The playlist is empty"; return null }
+        val dir = java.io.File(app().cacheDir, "share").apply { mkdirs() }
+        val safe = _listName.value.replace(Regex("[^\\p{L}\\p{N} ()._-]"), "_")
+        return java.io.File(dir, "$safe.m3u").apply { writeText(M3u.write(_queue.value.map { it.song })) }
+    }
+
+    fun playlistLinksText(): String =
+        _queue.value.joinToString("\n") { e ->
+            val s = e.song
+            (if (s.artist.isNotBlank()) "${s.artist} - ${s.title}" else s.title) + if (s.uri.startsWith("http")) "\n${s.uri}" else ""
+        }
+
+    // persistence of the current queue
+    private fun saveQueueState() {
+        val c = controller
+        val arr = JSONArray()
+        _queue.value.forEach { e ->
+            val s = e.song
+            arr.put(JSONObject().put("id", s.id).put("uri", s.uri).put("t", s.title).put("a", s.artist)
+                .put("al", s.album).put("d", s.durationMs).put("z", s.sizeBytes))
+        }
+        prefs.edit().putString("queue", arr.toString())
+            .putInt("queueIndex", c?.currentMediaItemIndex ?: 0)
+            .putLong("queuePos", c?.currentPosition ?: 0L)
+            .apply()
+    }
+
+    private fun restoreQueue(c: MediaController) {
+        if (c.mediaItemCount > 0) {
+            // The service kept playing while the screen was gone: rebuild our list from it.
+            val list = (0 until c.mediaItemCount).map { i ->
+                val item = c.getMediaItemAt(i)
+                val md = item.mediaMetadata
+                val known = _songs.value.firstOrNull { it.uri == item.mediaId }
+                entry(known ?: Song(-1L - i, item.mediaId, md.title?.toString() ?: item.mediaId, md.artist?.toString().orEmpty(), md.albumTitle?.toString().orEmpty(), 0L, 0L))
+            }
+            _queue.value = list
+            return
+        }
+        val saved = runCatching { JSONArray(prefs.getString("queue", "[]")) }.getOrNull() ?: return
+        if (saved.length() == 0) return
+        val songs = (0 until saved.length()).map { i ->
+            val o = saved.getJSONObject(i)
+            Song(o.optLong("id"), o.getString("uri"), o.optString("t"), o.optString("a"), o.optString("al"), o.optLong("d"), o.optLong("z"))
+        }
+        _queue.value = songs.map { entry(it) }
+        val idx = prefs.getInt("queueIndex", 0).coerceIn(0, songs.size - 1)
+        c.setMediaItems(songs.map { it.toItem() }, idx, prefs.getLong("queuePos", 0L))
+        c.prepare()
+    }
+
     // ---- sleep timer ----
     fun setSleep(choice: Int) {
         val i = choice.coerceIn(0, SLEEP_CHOICES.lastIndex)
@@ -509,6 +784,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     fun cycleSleep() = setSleep(if (_sleep.value >= SLEEP_CHOICES.lastIndex) 0 else _sleep.value + 1)
 
     override fun onCleared() {
+        saveQueueState()
         controller?.removeListener(listener)
         controllerFuture?.let { MediaController.releaseFuture(it) }
         super.onCleared()
