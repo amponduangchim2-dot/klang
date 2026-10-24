@@ -136,7 +136,7 @@ fun PlayerScreen(ui: PlayerUi, sleepChoice: Int, sleepLeftMs: Long, libraryCount
                                 ui.khz?.let { "${it}kHz" },
                                 when (ui.stereo) { true -> "stereo"; false -> "mono"; null -> null },
                             ).joinToString("  ").ifEmpty { " " },
-                            style = K.lcdSmall.copy(fontSize = 9.sp), maxLines = 1, softWrap = false,
+                            style = K.lcdSmall.copy(fontSize = 10.sp), maxLines = 1, softWrap = false,
                             overflow = TextOverflow.Clip
                         )
                         Spacer(Modifier.height(4.dp))

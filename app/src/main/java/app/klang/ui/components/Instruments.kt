@@ -177,7 +177,7 @@ fun TuningScale(
     var dragValue by remember { mutableFloatStateOf(0f) }
     val seek by rememberUpdatedState(onSeek)
     val shown = if (dragging) dragValue else progress
-    val numStyle = TextStyle(fontFamily = K.mono, fontSize = 9.sp, color = K.scaleInk)
+    val numStyle = TextStyle(fontFamily = K.mono, fontSize = 10.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium, color = K.scaleInk)
     Canvas(
         modifier
             .fillMaxWidth()
@@ -205,7 +205,7 @@ fun TuningScale(
         val x1 = size.width * 0.95f
         val totalSec = (durationMs / 1000L).coerceAtLeast(1L)
         val minutes = totalSec / 60f
-        val cap = numStyle.copy(fontFamily = K.sans, fontSize = 8.sp, color = K.scaleInk2)
+        val cap = numStyle.copy(fontFamily = K.sans, fontSize = 8.5.sp, color = K.scaleInk2)
 
         // ---- top scale: minutes, with 30 s and 10 s (or 1 min for long tracks) marks
         val minorStep = if (totalSec > 1200) 60L else 10L
@@ -236,28 +236,39 @@ fun TuningScale(
         drawLine(K.scaleInk2, Offset(x0, baseY), Offset(x1, baseY), 0.8.dp.toPx())
         drawLine(K.scaleInk2.copy(alpha = 0.5f), Offset(x0, 29.dp.toPx()), Offset(x1, 29.dp.toPx()), 0.5.dp.toPx())
 
-        // ---- bottom scale: tracks in the queue, with fine marks in between
-        val n = trackCount.coerceIn(1, 40)
-        val segments = (n - 1).coerceAtLeast(1)
-        val fine = when { n <= 3 -> 10; n <= 6 -> 5; n <= 12 -> 4; else -> 2 }
+        // ---- bottom scale: a numbered dial (at least 12 stations, like the design).
+        // Numbers past the end of the queue are printed faintly; the current track is red.
+        val queueCount = trackCount.coerceAtLeast(1)
+        val n = queueCount.coerceIn(12, 40)
+        val segments = n - 1
+        val fine = if (n <= 12) 5 else if (n <= 24) 3 else 2
         for (k in 0..segments * fine) {
+            if (k % fine == 0) continue
             val x = x0 + (x1 - x0) * k / (segments * fine)
-            val onTrack = k % fine == 0
-            if (!onTrack) drawLine(K.scaleInk2, Offset(x, baseY), Offset(x, baseY + 3.dp.toPx()), 0.6.dp.toPx())
+            val past = k / fine >= queueCount - 1 && queueCount < n
+            drawLine(
+                if (past) K.scaleInk2.copy(alpha = 0.45f) else K.scaleInk2,
+                Offset(x, baseY), Offset(x, baseY + 3.5.dp.toPx()), 0.6.dp.toPx()
+            )
         }
         val labelEvery = when { n <= 14 -> 1; n <= 28 -> 2; else -> 5 }
         for (i in 0 until n) {
-            val x = if (n == 1) x0 else x0 + (x1 - x0) * i / (n - 1)
+            val x = x0 + (x1 - x0) * i / segments
             val cur = i == trackIndex
+            val inQueue = i < queueCount
+            val tickColor = when { cur -> K.needle; inQueue -> K.scaleInk; else -> K.scaleInk2.copy(alpha = 0.55f) }
             drawLine(
-                if (cur) K.needle else K.scaleInk,
+                tickColor,
                 Offset(x, baseY - 4.dp.toPx()), Offset(x, baseY + 6.dp.toPx()),
                 (if (cur) 1.8 else 1.1).dp.toPx()
             )
             if (i % labelEvery == 0 || cur) {
                 val lay = measurer.measure(
                     (i + 1).toString().padStart(2, '0'),
-                    numStyle.copy(fontSize = 9.sp, color = if (cur) K.needle else K.scaleInk)
+                    numStyle.copy(
+                        fontSize = 9.5.sp,
+                        color = when { cur -> K.needle; inQueue -> K.scaleInk; else -> K.scaleInk2.copy(alpha = 0.6f) }
+                    )
                 )
                 drawText(lay, topLeft = Offset(x - lay.size.width / 2f, baseY + 8.dp.toPx()))
             }
