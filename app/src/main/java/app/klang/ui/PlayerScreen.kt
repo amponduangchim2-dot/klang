@@ -86,7 +86,7 @@ class PlayerActions(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun PlayerScreen(ui: PlayerUi, sleepChoice: Int, sleepLeftMs: Long, libraryCount: Int, a: PlayerActions) {
+fun PlayerScreen(ui: PlayerUi, sleepChoice: Int, sleepLeftMs: Long, libraryCount: Int, eqBands: List<Float>, eqPreset: String?, a: PlayerActions) {
     var vis by rememberSaveable { mutableStateOf(VisMode.Spectrum) }
     var remaining by rememberSaveable { mutableStateOf(false) }
     val gap = 8.dp
@@ -248,13 +248,17 @@ fun PlayerScreen(ui: PlayerUi, sleepChoice: Int, sleepLeftMs: Long, libraryCount
 
         // ---- windows: equalizer + playlist
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(gap)) {
-            Tile(Modifier.weight(1f).fillMaxHeight(), onClick = { a.notYet("Equalizer screen") }) {
+            Tile(Modifier.weight(1f).fillMaxHeight(), onClick = { a.open(Screen.Eq) }) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("equalizer", style = K.label, modifier = Modifier.weight(1f)); Lamp(ui.eqOn)
                 }
-                Spacer(Modifier.height(10.dp))
-                Text(if (ui.eqOn) "on" else "off", style = K.value.copy(fontSize = 20.sp))
-                Text("10 band + preamp", style = K.label)
+                Spacer(Modifier.height(8.dp))
+                MiniEqBars(eqBands, ui.eqOn)
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    if (!ui.eqOn) "off" else (eqPreset ?: "custom"),
+                    style = K.lcd(eqPreset ?: "", K.label), maxLines = 1, overflow = TextOverflow.Ellipsis
+                )
             }
             Tile(Modifier.weight(1f).fillMaxHeight(), onClick = { a.open(Screen.Queue) }) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

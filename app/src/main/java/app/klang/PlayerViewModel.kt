@@ -12,7 +12,13 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import android.net.Uri
+import app.klang.eq.BuiltInPresets
+import app.klang.eq.EqPreset
+import app.klang.eq.Eqf
 import app.klang.library.LocalMusic
+import org.json.JSONArray
+import org.json.JSONObject
 import app.klang.library.Song
 import app.klang.playback.AudioEngine
 import app.klang.playback.PlaybackService
@@ -47,6 +53,17 @@ data class PlayerUi(
     val eqOn: Boolean = true,
 )
 
+data class EqUi(
+    val on: Boolean = true,
+    val auto: Boolean = false,
+    val preamp: Float = 0f,
+    val bands: List<Float> = List(10) { 0f },
+    /** Name of the preset the curve came from, or null when edited by hand. */
+    val presetName: String? = "Flat",
+    val mine: List<EqPreset> = emptyList(),
+    val shade: Boolean = false,
+)
+
 /** Sleep timer choices, same set as the original app. */
 val SLEEP_CHOICES = listOf("off", "15 min", "30 min", "45 min", "60 min", "90 min", "end of song")
 private val SLEEP_MINUTES = listOf(0, 15, 30, 45, 60, 90, -1)
@@ -71,12 +88,21 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private val _sleepLeftMs = MutableStateFlow(0L)
     val sleepLeftMs: StateFlow<Long> = _sleepLeftMs
 
+    private val _eq = MutableStateFlow(EqUi())
+    val eq: StateFlow<EqUi> = _eq
+
+    /** One-off messages for the UI to show (toasts). */
+    private val _message = MutableStateFlow<String?>(null)
+    val message: StateFlow<String?> = _message
+    fun messageShown() { _message.value = null }
+
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var controller: MediaController? = null
 
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) = refresh()
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            if (_eq.value.auto) mediaItem?.mediaId?.let { applyAutoPresetFor(it) }
             if (_sleep.value == SLEEP_MINUTES.lastIndex && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
                 controller?.pause()
                 setSleep(0)
@@ -93,6 +119,14 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             volume = prefs.getFloat("volume", 0.7f),
             balance = AudioEngine.balance,
             eqOn = AudioEngine.eqEnabled,
+        )
+        _eq.value = EqUi(
+            on = AudioEngine.eqEnabled,
+            auto = prefs.getBoolean("eqAuto", false),
+            preamp = AudioEngine.preampDb,
+            bands = List(AudioEngine.BAND_COUNT) { AudioEngine.gainDb(it) },
+            presetName = prefs.getString("eqPreset", "Flat"),
+            mine = loadMine(),
         )
         connect()
         viewModelScope.launch {
@@ -292,6 +326,161 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         AudioEngine.eqEnabled = !AudioEngine.eqEnabled
         prefs.edit().putBoolean("eqOn", AudioEngine.eqEnabled).apply()
         _ui.value = _ui.value.copy(eqOn = AudioEngine.eqEnabled)
+        _eq.value = _eq.value.copy(on = AudioEngine.eqEnabled)
+    }
+
+    // ---- equalizer ----
+    fun setEqOn(on: Boolean) { if (AudioEngine.eqEnabled != on) toggleEq() }
+
+    fun setEqAuto(auto: Boolean) {
+        _eq.value = _eq.value.copy(auto = auto)
+        prefs.edit().putBoolean("eqAuto", auto).apply()
+        if (auto) controller?.currentMediaItem?.mediaId?.let { applyAutoPresetFor(it) }
+    }
+
+    fun toggleEqShade() { _eq.value = _eq.value.copy(shade = !_eq.value.shade) }
+
+    private fun commitEq(bands: List<Float>, preamp: Float, name: String?) {
+        AudioEngine.setAllGains(bands.toFloatArray())
+        AudioEngine.preampDb = preamp
+        _eq.value = _eq.value.copy(bands = bands, preamp = preamp, presetName = name)
+        prefs.edit().apply {
+            bands.forEachIndexed { i, v -> putFloat("eq$i", v) }
+            putFloat("preamp", preamp)
+            if (name != null) putString("eqPreset", name) else remove("eqPreset")
+        }.apply()
+        if (_eq.value.auto) rememberAutoPreset()
+    }
+
+    fun setBand(i: Int, db: Float) {
+        val v = (db * 2f).let { kotlin.math.round(it) / 2f }.coerceIn(-12f, 12f)
+        val bands = _eq.value.bands.toMutableList().also { it[i] = v }
+        commitEq(bands, _eq.value.preamp, null)
+    }
+
+    fun setPreamp(db: Float) {
+        val v = (db * 2f).let { kotlin.math.round(it) / 2f }.coerceIn(-12f, 12f)
+        commitEq(_eq.value.bands, v, null)
+    }
+
+    fun applyPreset(p: EqPreset) = commitEq(p.bands, p.preamp, p.name)
+
+    fun resetEq() = applyPreset(BuiltInPresets.byName("Flat")!!)
+
+    private fun loadMine(): List<EqPreset> = runCatching {
+        val arr = JSONArray(prefs.getString("myPresets", "[]"))
+        (0 until arr.length()).map { i ->
+            val o = arr.getJSONObject(i)
+            val b = o.getJSONArray("bands")
+            EqPreset(o.getString("name"), (0 until 10).map { b.getDouble(it).toFloat() }, o.optDouble("preamp", 0.0).toFloat())
+        }
+    }.getOrDefault(emptyList())
+
+    private fun saveMine(list: List<EqPreset>) {
+        val arr = JSONArray()
+        list.forEach { p ->
+            arr.put(JSONObject().put("name", p.name).put("preamp", p.preamp.toDouble())
+                .put("bands", JSONArray().apply { p.bands.forEach { put(it.toDouble()) } }))
+        }
+        prefs.edit().putString("myPresets", arr.toString()).apply()
+        _eq.value = _eq.value.copy(mine = list)
+    }
+
+    /** Returns an error message, or null when saved. */
+    fun saveMyPreset(name: String): String? {
+        val n = name.trim()
+        if (n.isEmpty()) return "A preset needs a name"
+        val mine = _eq.value.mine
+        if (mine.any { it.name.equals(n, true) }) return "There is already a preset called \"$n\""
+        saveMine(mine + EqPreset(n, _eq.value.bands, _eq.value.preamp))
+        _eq.value = _eq.value.copy(presetName = n)
+        prefs.edit().putString("eqPreset", n).apply()
+        return null
+    }
+
+    fun renameMyPreset(old: String, new: String): String? {
+        val n = new.trim()
+        if (n.isEmpty()) return "A preset needs a name"
+        val mine = _eq.value.mine
+        if (mine.any { it.name.equals(n, true) && !it.name.equals(old, true) }) return "There is already a preset called \"$n\""
+        saveMine(mine.map { if (it.name == old) it.copy(name = n) else it })
+        if (_eq.value.presetName == old) _eq.value = _eq.value.copy(presetName = n)
+        return null
+    }
+
+    fun deleteMyPreset(name: String) {
+        saveMine(_eq.value.mine.filterNot { it.name == name })
+    }
+
+    fun importEqf(uri: Uri) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val bytes = getApplication<Application>().contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        ?: error("Could not read the file")
+                    if (bytes.size > 2_000_000) error("That file is too large to open")
+                    Eqf.read(bytes)
+                }
+            }
+            result.onSuccess { found ->
+                val mine = _eq.value.mine.toMutableList()
+                var added = 0
+                for (p in found) {
+                    var name = p.name
+                    var k = 2
+                    while (mine.any { it.name.equals(name, true) }) name = "${p.name} ($k)".also { k++ }
+                    mine += p.copy(name = name)
+                    added++
+                }
+                saveMine(mine)
+                _message.value = "Added $added preset(s) to My presets"
+            }.onFailure { _message.value = it.message ?: "Could not read those presets" }
+        }
+    }
+
+    fun exportEqf(uri: Uri) {
+        val mine = _eq.value.mine
+        if (mine.isEmpty()) { _message.value = "Save a preset first: Export writes your own presets to an .eqf file."; return }
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    getApplication<Application>().contentResolver.openOutputStream(uri)?.use { it.write(Eqf.write(mine)) } ?: error("x")
+                }.isSuccess
+            }
+            _message.value = if (ok) "Exported ${mine.size} preset(s)" else "Could not write the file"
+        }
+    }
+
+    /** Writes the presets to share into the cache and returns that file. */
+    fun presetFileForSharing(onlyCurrent: Boolean): java.io.File? {
+        val list = if (onlyCurrent) listOf(EqPreset(_eq.value.presetName ?: "My preset", _eq.value.bands, _eq.value.preamp))
+        else _eq.value.mine
+        if (list.isEmpty()) { _message.value = "Save a preset first."; return null }
+        val dir = java.io.File(getApplication<Application>().cacheDir, "share").apply { mkdirs() }
+        val safe = (if (onlyCurrent) list[0].name else "Klang presets").replace(Regex("[^\\p{L}\\p{N} ()._-]"), "_")
+        return java.io.File(dir, "$safe.eqf").apply { writeBytes(Eqf.write(list)) }
+    }
+
+    // auto: remember a preset per track
+    private fun autoMap(): JSONObject = runCatching { JSONObject(prefs.getString("eqAutoMap", "{}")!!) }.getOrDefault(JSONObject())
+
+    private fun rememberAutoPreset() {
+        val id = controller?.currentMediaItem?.mediaId ?: return
+        val e = _eq.value
+        val map = autoMap()
+        map.put(id, JSONObject().put("name", e.presetName ?: JSONObject.NULL).put("preamp", e.preamp.toDouble())
+            .put("bands", JSONArray().apply { e.bands.forEach { put(it.toDouble()) } }))
+        prefs.edit().putString("eqAutoMap", map.toString()).apply()
+    }
+
+    private fun applyAutoPresetFor(id: String) {
+        val o = autoMap().optJSONObject(id) ?: return
+        val b = o.optJSONArray("bands") ?: return
+        val bands = (0 until 10).map { b.optDouble(it, 0.0).toFloat() }
+        val name = if (o.isNull("name")) null else o.optString("name")
+        AudioEngine.setAllGains(bands.toFloatArray())
+        AudioEngine.preampDb = o.optDouble("preamp", 0.0).toFloat()
+        _eq.value = _eq.value.copy(bands = bands, preamp = AudioEngine.preampDb, presetName = name)
     }
 
     // ---- sleep timer ----
