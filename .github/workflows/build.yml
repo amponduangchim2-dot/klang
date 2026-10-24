@@ -23,7 +23,16 @@ jobs:
           gradle-version: "8.10.2"
 
       - name: Build
-        run: gradle :app:assembleRelease --stacktrace
+        run: |
+          set -o pipefail
+          gradle :app:assembleRelease --console=plain 2>&1 | tee build.log
+
+      - name: Report compile errors
+        if: failure()
+        run: |
+          grep -E "^e: |error:|What went wrong" -A2 build.log | head -80 | while IFS= read -r line; do
+            echo "::error::${line//%/%25}"
+          done
 
       - name: Rename APK
         run: |
