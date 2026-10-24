@@ -50,6 +50,12 @@ import app.klang.ui.LibraryScreen
 import app.klang.ui.PlayerActions
 import app.klang.ui.PlayerScreen
 import app.klang.ui.Screen
+import app.klang.ui.HubActions
+import app.klang.ui.LibraryHub
+import app.klang.ui.ListKind
+import app.klang.ui.LyricsScreen
+import app.klang.ui.SongListScreen
+import app.klang.ui.ago
 
 class MainActivity : ComponentActivity() {
 
@@ -109,6 +115,9 @@ class MainActivity : ComponentActivity() {
             val savedNames by vm.savedNames.collectAsStateWithLifecycle()
             val searchUi by vm.search.collectAsStateWithLifecycle()
             val skipNonMusic by vm.skipNonMusic.collectAsStateWithLifecycle()
+            val lists by vm.lists.collectAsStateWithLifecycle()
+            val lyrics by vm.lyrics.collectAsStateWithLifecycle()
+            var listKind by rememberSaveable { mutableStateOf(ListKind.FAVORITES) }
             val voiceLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
                 val text = res.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
                 if (!text.isNullOrBlank()) { vm.setQuery(text); vm.submitSearch(text) }
@@ -176,7 +185,11 @@ class MainActivity : ComponentActivity() {
             }
 
             BackHandler(enabled = screen != Screen.Player) {
-                screen = if (screen == Screen.LibraryAdd) Screen.Queue else Screen.Player
+                screen = when (screen) {
+                    Screen.LibraryAdd -> Screen.Queue
+                    Screen.Songs, Screen.Bookmarks -> Screen.Hub
+                    else -> Screen.Player
+                }
             }
 
             val actions = remember(vm) {
@@ -310,6 +323,79 @@ class MainActivity : ComponentActivity() {
                         })
                     }
                     Screen.Search -> SearchScreen(searchUi, skipNonMusic, searchActions)
+                    Screen.Bookmarks -> SearchScreen(searchUi, skipNonMusic, remember(searchActions) {
+                        SearchActions(
+                            { screen = Screen.Hub }, searchActions.setQuery, searchActions.suggest, searchActions.submit,
+                            searchActions.voice, searchActions.play, searchActions.add, searchActions.addAll,
+                            searchActions.clearHistory, searchActions.openBookmark, searchActions.deleteBookmark,
+                            searchActions.addBookmark, searchActions.toggleSkip,
+                        )
+                    }, startTab = 1)
+                    Screen.Hub -> LibraryHub(
+                        localCount = songs.size,
+                        favorites = lists.favorites.size,
+                        mostPlayedTop = lists.mostPlayed.firstOrNull()?.first,
+                        historyCount = lists.history.size,
+                        lastPlayed = lists.history.firstOrNull()?.first,
+                        bookmarks = searchUi.bookmarks.size,
+                        savedNames = savedNames,
+                        a = remember(vm) {
+                            HubActions(
+                                back = { screen = Screen.Player },
+                                openLocal = { screen = Screen.Library },
+                                openList = { listKind = it; screen = Screen.Songs },
+                                openBookmarks = { screen = Screen.Bookmarks },
+                                playSaved = { vm.loadList(it, false); screen = Screen.Player },
+                                appendSaved = { vm.loadList(it, true) },
+                                deleteSaved = vm::deleteList,
+                            )
+                        },
+                    )
+                    Screen.Songs -> {
+                        val back = { screen = Screen.Hub }
+                        val play = { l: List<app.klang.library.Song>, i: Int -> vm.playList(l, i); screen = Screen.Player }
+                        val add = { l: List<app.klang.library.Song> -> vm.appendSongs(l) }
+                        when {
+                            listKind == ListKind.FAVORITES -> SongListScreen(
+                                "favorites", "${lists.favorites.size} songs", lists.favorites, currentUri, null,
+                                "No favorites yet. Tap ☆ next to a song in the playlist to star it.", play, add, back
+                            )
+                            listKind == ListKind.MOST -> {
+                                val l = lists.mostPlayed
+                                SongListScreen(
+                                    "most played", "top ${l.size}", l.map { it.first }, currentUri, { i -> "${l[i].second}×" },
+                                    "Nothing played yet. A song counts after 30 seconds.", play, add, back
+                                )
+                            }
+                            listKind == ListKind.HISTORY -> {
+                                val l = lists.history
+                                SongListScreen(
+                                    "history", "${l.size} recent", l.map { it.first }, currentUri, { i -> ago(l[i].second) },
+                                    "Nothing played yet.", play, add, back,
+                                    extraLabel = "clear", onExtra = vm::clearPlayHistory,
+                                )
+                            }
+                            else -> {
+                                val name = listKind.removePrefix("list:")
+                                val l = remember(name, savedNames) { vm.savedListSongs(name) }
+                                SongListScreen(
+                                    name, "saved list", l, currentUri, null,
+                                    "This list is empty, or its songs are no longer on this phone.", play, add, back
+                                )
+                            }
+                        }
+                    }
+                    Screen.Lyrics -> LyricsScreen(
+                        ui = ui,
+                        lyrics = lyrics,
+                        currentUri = currentUri,
+                        load = vm::loadLyrics,
+                        seekTo = vm::seekToMs,
+                        togglePlay = vm::togglePlay,
+                        previous = vm::previous,
+                        next = vm::next,
+                        onBack = { screen = Screen.Player },
+                    )
                     Screen.LibraryAdd -> LibraryScreen(
                         songs = songs,
                         hasPermission = hasPermission,

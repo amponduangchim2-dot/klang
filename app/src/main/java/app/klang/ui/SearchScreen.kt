@@ -72,8 +72,8 @@ class SearchActions(
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
-fun SearchScreen(s: SearchUi, skipNonMusic: Boolean, a: SearchActions) {
-    var tab by rememberSaveable { mutableIntStateOf(0) }   // 0 results, 1 bookmarks
+fun SearchScreen(s: SearchUi, skipNonMusic: Boolean, a: SearchActions, startTab: Int = 0) {
+    var tab by rememberSaveable { mutableIntStateOf(startTab) }   // 0 results, 1 bookmarks
     val focus = LocalFocusManager.current
 
     // suggestions while typing, 300 ms after the last key

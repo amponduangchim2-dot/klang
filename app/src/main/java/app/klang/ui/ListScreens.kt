@@ -33,7 +33,7 @@ import app.klang.ui.components.LcdBox
 import app.klang.ui.components.TextKey
 import app.klang.ui.components.Tile
 
-enum class Screen { Player, Library, LibraryAdd, Queue, Eq, Search }
+enum class Screen { Player, Library, LibraryAdd, Queue, Eq, Search, Hub, Songs, Lyrics, Bookmarks }
 
 @Composable
 fun ScreenHeader(title: String, model: String, onBack: () -> Unit) {
@@ -48,12 +48,14 @@ fun ScreenHeader(title: String, model: String, onBack: () -> Unit) {
 
 /** A list of songs on the light LCD. */
 @Composable
-private fun SongLcdList(
+internal fun SongLcdList(
     songs: List<Song>,
     currentUri: String?,
     onPick: (Int) -> Unit,
     modifier: Modifier = Modifier,
     scrollTo: Int = -1,
+    trailing: ((Int) -> String)? = null,
+    onAdd: ((Int) -> Unit)? = null,
 ) {
     val state = rememberLazyListState()
     LaunchedEffect(scrollTo) { if (scrollTo >= 0) state.scrollToItem((scrollTo - 2).coerceAtLeast(0)) }
@@ -82,7 +84,11 @@ private fun SongLcdList(
                         )
                         if (s.artist.isNotBlank()) Text(s.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = K.lcd(s.artist, K.lcdSmall))
                     }
-                    Text(formatTime(s.durationMs), style = K.lcdSmall)
+                    Text(trailing?.invoke(i) ?: formatTime(s.durationMs), style = K.lcdSmall)
+                    if (onAdd != null) {
+                        Spacer(Modifier.width(6.dp))
+                        TextKey("+", { onAdd(i) }, Modifier.size(32.dp))
+                    }
                 }
             }
         }

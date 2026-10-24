@@ -16,7 +16,11 @@ import android.net.Uri
 import app.klang.eq.BuiltInPresets
 import app.klang.eq.EqPreset
 import app.klang.eq.Eqf
+import app.klang.library.LibraryStore
 import app.klang.library.LocalMusic
+import app.klang.lyrics.LrcLib
+import app.klang.lyrics.LyricLine
+import app.klang.lyrics.LyricsUnavailable
 import org.json.JSONArray
 import org.json.JSONObject
 import app.klang.library.Song
@@ -88,6 +92,21 @@ data class SearchUi(
     val bookmarks: List<Bookmark> = emptyList(),
 )
 
+data class LibraryLists(
+    val favorites: List<Song> = emptyList(),
+    val mostPlayed: List<Pair<Song, Int>> = emptyList(),
+    val history: List<Pair<Song, Long>> = emptyList(),
+)
+
+data class LyricsUi(
+    val forUri: String? = null,
+    val loading: Boolean = false,
+    val message: String? = null,
+    val synced: List<LyricLine> = emptyList(),
+    val plain: String? = null,
+    val source: String? = null,
+)
+
 /** Sleep timer choices, same set as the original app. */
 val SLEEP_CHOICES = listOf("off", "15 min", "30 min", "45 min", "60 min", "90 min", "end of song")
 private val SLEEP_MINUTES = listOf(0, 15, 30, 45, 60, 90, -1)
@@ -142,6 +161,14 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     val skipNonMusic: StateFlow<Boolean> = _skipNonMusic
     private val segmentLoads = HashSet<String>()
 
+    private val store = LibraryStore(app)
+    private val _lists = MutableStateFlow(LibraryLists())
+    val lists: StateFlow<LibraryLists> = _lists
+    private var countedKey: Long? = null
+
+    private val _lyrics = MutableStateFlow(LyricsUi())
+    val lyrics: StateFlow<LyricsUi> = _lyrics
+
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var controller: MediaController? = null
 
@@ -187,7 +214,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             presetName = prefs.getString("eqPreset", "Flat"),
             mine = loadMine(),
         )
-        _favorites.value = prefs.getStringSet("favorites", emptySet())!!.toSet()
+        _favorites.value = prefs.getStringSet("favorites", emptySet())!!.toSet() + store.favoriteUris()
+        refreshLists()
         _skipNonMusic.value = prefs.getBoolean("skipNonMusic", true)
         _search.value = SearchUi(history = loadHistory(), bookmarks = loadBookmarks())
         _savedNames.value = savedLists.names()
@@ -198,6 +226,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             while (true) {
                 refresh()
                 skipSegmentsIfNeeded()
+                countPlayIfNeeded()
                 if (++tick % 20 == 0) saveQueueState()
                 delay(250)
             }
@@ -229,6 +258,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val list = withContext(Dispatchers.IO) { LocalMusic.load(getApplication()) }
             _songs.value = list
+            withContext(Dispatchers.IO) { store.importFavoriteUris(_favorites.value) { u -> list.firstOrNull { it.uri == u } } }
+            refreshLists()
         }
     }
 
@@ -690,10 +721,82 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun toggleFavorite(uri: String) {
-        val f = _favorites.value.let { if (uri in it) it - uri else it + uri }
+        val on = uri !in _favorites.value
+        val f = if (on) _favorites.value + uri else _favorites.value - uri
         _favorites.value = f
         prefs.edit().putStringSet("favorites", f).apply()
+        val song = _queue.value.firstOrNull { it.song.uri == uri }?.song
+            ?: _songs.value.firstOrNull { it.uri == uri }
+            ?: _lists.value.favorites.firstOrNull { it.uri == uri }
+        if (song != null) store.setFavorite(song, on)
+        refreshLists()
     }
+
+    fun favoriteCurrent() {
+        val s = currentSong() ?: run { _message.value = "Play a song first"; return }
+        toggleFavorite(s.uri)
+        _message.value = if (s.uri in _favorites.value) "Added to favorites" else "Removed from favorites"
+    }
+
+    // ---- library: plays, history, favorites ----
+    private fun refreshLists() {
+        _lists.value = LibraryLists(store.favorites(), store.mostPlayed(), store.history())
+    }
+
+    /** A play counts once a track has played for 30 seconds (or half of a short track). */
+    private fun countPlayIfNeeded() {
+        val c = controller ?: return
+        val entry = _queue.value.getOrNull(c.currentMediaItemIndex) ?: return
+        if (countedKey == entry.key) return
+        val dur = c.duration.takeIf { it > 0 } ?: entry.song.durationMs
+        val need = if (dur > 0) minOf(30_000L, dur / 2) else 30_000L
+        if (c.isPlaying && c.currentPosition >= need) {
+            countedKey = entry.key
+            val song = if (entry.song.durationMs <= 0 && dur > 0) entry.song.copy(durationMs = dur) else entry.song
+            viewModelScope.launch(Dispatchers.IO) {
+                store.recordPlay(song)
+                withContext(Dispatchers.Main) { refreshLists() }
+            }
+        }
+    }
+
+    fun clearPlayHistory() {
+        store.clearHistory()
+        refreshLists()
+        _message.value = "History cleared"
+    }
+
+    fun savedListSongs(name: String): List<Song> =
+        savedLists.read(name)?.let { M3u.parse(it, _songs.value).first } ?: emptyList()
+
+    // ---- lyrics ----
+    fun loadLyrics(force: Boolean = false) {
+        val c = controller
+        val song = currentSong()
+        if (c == null || song == null) {
+            _lyrics.value = LyricsUi(message = "Play a song first to see its lyrics.")
+            return
+        }
+        if (!force && _lyrics.value.forUri == song.uri && !_lyrics.value.loading) return
+        val title = c.mediaMetadata.title?.toString() ?: song.title
+        val artist = c.mediaMetadata.artist?.toString() ?: song.artist
+        val dur = c.duration.takeIf { it > 0 } ?: song.durationMs
+        _lyrics.value = LyricsUi(forUri = song.uri, loading = true, message = "Searching LRCLIB…")
+        viewModelScope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { LrcLib.find(title, artist, dur) } }
+            if (_lyrics.value.forUri != song.uri) return@launch
+            r.onSuccess { res ->
+                _lyrics.value = LyricsUi(
+                    forUri = song.uri, synced = res.synced, plain = res.plain,
+                    source = listOf(res.artistName, res.trackName).filter { it.isNotBlank() }.joinToString(" – "),
+                )
+            }.onFailure {
+                _lyrics.value = LyricsUi(forUri = song.uri, message = (it as? LyricsUnavailable)?.message ?: "No lyrics found for this song.")
+            }
+        }
+    }
+
+    fun seekToMs(ms: Long) { controller?.seekTo(ms.coerceAtLeast(0L)) }
 
     // lists
     fun newList(name: String): String? {
