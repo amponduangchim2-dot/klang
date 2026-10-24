@@ -2,20 +2,22 @@ package app.klang.ui
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import app.klang.R
 
 /** Design tokens, matching the "Droidamp Rams" HTML concept. */
 object K {
-    val desk = Color(0xFFE7E5E0)
+    val desk = Color(0xFFE2E0DA)
     val shell = Color(0xFFF3F2EE)
-    val tile = Color(0xFFE9E7E2)
-    val tile2 = Color(0xFFE1DFD9)
-    val line = Color(0xFFD3D0C9)
+    val tile = Color(0xFFE5E3DD)
+    val tile2 = Color(0xFFDCDAD3)
+    val line = Color(0xFFCDCAC2)
     val ink = Color(0xFF232321)
-    val ink2 = Color(0xFF7F7D77)
-    val ink3 = Color(0xFFAEACA5)
+    val ink2 = Color(0xFF7A7872)
+    val ink3 = Color(0xFFAAA8A1)
     val hole = Color(0xFF2A2A27)
     val sage = Color(0xFFB3BAB4)
     val sageLight = Color(0xFFCDD3CD)
@@ -35,10 +37,17 @@ object K {
     val orangeLight = Color(0xFFFF7038)
     val keyHi = Color(0xFFFCFBF8)
     val keyLo = Color(0xFFECEBE6)
+    val keyLip = Color(0xFFC6C3BB)
     val wood = Color(0xFFC98A4F)
     val wood2 = Color(0xFFB37440)
 
-    val sans = FontFamily.SansSerif
+    /** IBM Plex Sans Thai covers both Thai and Latin, so it is the UI face. */
+    val sans = FontFamily(
+        Font(R.font.plex_thai_regular, FontWeight.Normal),
+        Font(R.font.plex_thai_medium, FontWeight.Medium),
+        Font(R.font.plex_thai_semibold, FontWeight.SemiBold),
+        Font(R.font.plex_thai_bold, FontWeight.Bold),
+    )
     val mono = FontFamily.Monospace
 
     val label = TextStyle(fontFamily = sans, fontSize = 11.sp, color = ink2)
@@ -48,4 +57,10 @@ object K {
     val lcdText = TextStyle(fontFamily = mono, fontSize = 12.sp, color = seg)
     val lcdSmall = TextStyle(fontFamily = mono, fontSize = 10.sp, color = lcdDim)
     val wordmark = TextStyle(fontFamily = sans, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = ink, letterSpacing = (-0.4).sp)
+
+    private val thai = Regex("[฀-๿]")
+
+    /** LCD text: monospace for Latin, IBM Plex Sans Thai when the text contains Thai. */
+    fun lcd(text: String, base: TextStyle = lcdText): TextStyle =
+        if (thai.containsMatchIn(text)) base.copy(fontFamily = sans, letterSpacing = 0.sp) else base
 }

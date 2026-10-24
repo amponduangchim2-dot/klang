@@ -150,7 +150,7 @@ fun Key(
     val lip = when {
         orange -> K.orangeDark
         dark -> Color(0xFF000000)
-        else -> Color(0xFFC9C6BE)
+        else -> K.keyLip
     }
     val fg = if (orange || dark) Color.White else K.ink
     val travel = if (pressed) 1.5.dp else 0.dp
@@ -163,15 +163,15 @@ fun Key(
         Box(
             Modifier
                 .fillMaxSize()
-                .padding(top = 2.dp)
-                .shadow(if (pressed) 1.dp else 3.dp, shape, clip = false)
+                .padding(top = 3.dp)
+                .shadow(if (pressed) 0.5.dp else 1.5.dp, shape, clip = false, ambientColor = Color.Black.copy(alpha = 0.4f), spotColor = Color.Black.copy(alpha = 0.4f))
                 .background(lip, shape)
         )
         // face
         Box(
             Modifier
                 .fillMaxSize()
-                .padding(bottom = 2.dp)
+                .padding(bottom = 2.5.dp)
                 .offset(y = travel)
                 .background(Brush.verticalGradient(face), shape)
                 .border(0.5.dp, Color.White.copy(alpha = if (orange || dark) 0.15f else 0.8f), shape),
@@ -213,7 +213,7 @@ fun PushButton(on: Boolean, onClick: () -> Unit, label: String, modifier: Modifi
         Spacer(Modifier.height(6.dp))
         Canvas(
             Modifier
-                .size(40.dp)
+                .size(36.dp)
                 .clip(CircleShape)
                 .semantics { contentDescription = "$label ${if (on) "on" else "off"}" }
                 .clickable(role = Role.Switch, onClick = onClick)

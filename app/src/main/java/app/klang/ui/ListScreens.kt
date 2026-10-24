@@ -78,9 +78,9 @@ private fun SongLcdList(
                     Column(Modifier.weight(1f)) {
                         Text(
                             s.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            style = K.lcdText.copy(color = if (cur) K.orange else K.seg, fontWeight = if (cur) FontWeight.Medium else FontWeight.Normal)
+                            style = K.lcd(s.title).copy(color = if (cur) K.orange else K.seg, fontWeight = if (cur) FontWeight.Medium else FontWeight.Normal)
                         )
-                        if (s.artist.isNotBlank()) Text(s.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = K.lcdSmall)
+                        if (s.artist.isNotBlank()) Text(s.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = K.lcd(s.artist, K.lcdSmall))
                     }
                     Text(formatTime(s.durationMs), style = K.lcdSmall)
                 }

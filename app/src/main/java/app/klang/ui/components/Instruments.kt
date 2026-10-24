@@ -117,8 +117,17 @@ private val DIGITS = listOf("abcdef", "bc", "abged", "abgcd", "fgbc", "afgcd", "
 @Composable
 fun SevenSegment(text: String, modifier: Modifier = Modifier, height: Dp = 40.dp, on: Color = K.seg, ghost: Color = K.ghost) {
     Canvas(modifier.height(height).fillMaxWidth()) {
-        val u = size.height / 31f
-        var x = 0f
+        // Width of the text in segment units, so the digits always fit the LCD.
+        val units = text.sumOf { ch ->
+            when {
+                ch.isDigit() -> 24.0
+                ch == ':' -> 9.0
+                ch == '-' -> 14.0
+                else -> 12.0
+            }
+        }.toFloat() - 4f
+        val u = minOf(size.height / 31f, size.width / units.coerceAtLeast(1f))
+        var x = (size.width - units * u).coerceAtLeast(0f)
         for (ch in text) {
             when {
                 ch.isDigit() -> {
@@ -172,7 +181,7 @@ fun TuningScale(
     Canvas(
         modifier
             .fillMaxWidth()
-            .height(66.dp)
+            .height(70.dp)
             .clip(RoundedCornerShape(8.dp))
             .semantics { contentDescription = "Position. Drag to seek." }
             .pointerInput(Unit) {
@@ -191,42 +200,75 @@ fun TuningScale(
             }
     ) {
         drawRect(Brush.verticalGradient(listOf(K.glow, K.glow2)))
-        drawRect(Brush.radialGradient(listOf(Color(0x33F08C3C), Color.Transparent), center = center, radius = size.width * 0.6f))
-        val x0 = size.width * 0.04f
-        val x1 = size.width * 0.96f
+        drawRect(Brush.radialGradient(listOf(Color(0x40F08C3C), Color.Transparent), center = center, radius = size.width * 0.6f))
+        val x0 = size.width * 0.05f
+        val x1 = size.width * 0.95f
         val totalSec = (durationMs / 1000L).coerceAtLeast(1L)
+        val minutes = totalSec / 60f
+        val cap = numStyle.copy(fontFamily = K.sans, fontSize = 8.sp, color = K.scaleInk2)
+
+        // ---- top scale: minutes, with 30 s and 10 s (or 1 min for long tracks) marks
+        val minorStep = if (totalSec > 1200) 60L else 10L
         var s = 0L
         while (s <= totalSec) {
             val x = x0 + (x1 - x0) * s / totalSec
             val major = s % 60L == 0L
+            val half = !major && s % 30L == 0L
+            val top = when { major -> 13; half -> 16; else -> 19 }.dp.toPx()
             drawLine(
                 if (major) K.scaleInk else K.scaleInk2,
-                Offset(x, (if (major) 14 else 18).dp.toPx()),
-                Offset(x, (if (major) 30 else 26).dp.toPx()),
-                if (major) 1.2.dp.toPx() else 0.8.dp.toPx()
+                Offset(x, top),
+                Offset(x, 27.dp.toPx()),
+                (if (major) 1.3 else if (half) 1.0 else 0.7).dp.toPx()
             )
-            if (major) {
+            if (major && (minutes <= 12f || (s / 60L) % 5L == 0L)) {
                 val lay = measurer.measure((s / 60L).toString(), numStyle)
-                drawText(lay, topLeft = Offset(x - lay.size.width / 2f, 1.dp.toPx()))
+                drawText(lay, topLeft = Offset(x - lay.size.width / 2f, 1.5.dp.toPx()))
             }
-            s += if (totalSec > 1200) 60 else 10
+            s += minorStep
         }
-        val baseY = 40.dp.toPx()
+        // scale captions, like the band names on a radio dial
+        measurer.measure("min", cap).let { drawText(it, topLeft = Offset(size.width * 0.012f, 15.dp.toPx())) }
+        measurer.measure("trk", cap).let { drawText(it, topLeft = Offset(size.width * 0.012f, 43.dp.toPx())) }
+
+        // ---- centre rail
+        val baseY = 37.dp.toPx()
         drawLine(K.scaleInk2, Offset(x0, baseY), Offset(x1, baseY), 0.8.dp.toPx())
-        val n = trackCount.coerceIn(1, 24)
+        drawLine(K.scaleInk2.copy(alpha = 0.5f), Offset(x0, 29.dp.toPx()), Offset(x1, 29.dp.toPx()), 0.5.dp.toPx())
+
+        // ---- bottom scale: tracks in the queue, with fine marks in between
+        val n = trackCount.coerceIn(1, 40)
+        val segments = (n - 1).coerceAtLeast(1)
+        val fine = when { n <= 3 -> 10; n <= 6 -> 5; n <= 12 -> 4; else -> 2 }
+        for (k in 0..segments * fine) {
+            val x = x0 + (x1 - x0) * k / (segments * fine)
+            val onTrack = k % fine == 0
+            if (!onTrack) drawLine(K.scaleInk2, Offset(x, baseY), Offset(x, baseY + 3.dp.toPx()), 0.6.dp.toPx())
+        }
+        val labelEvery = when { n <= 14 -> 1; n <= 28 -> 2; else -> 5 }
         for (i in 0 until n) {
             val x = if (n == 1) x0 else x0 + (x1 - x0) * i / (n - 1)
             val cur = i == trackIndex
-            drawLine(if (cur) K.needle else K.scaleInk2, Offset(x, baseY - 3.dp.toPx()), Offset(x, baseY + 3.dp.toPx()), (if (cur) 1.6 else 0.8).dp.toPx())
-            if (n <= 14 || i % 2 == 0 || cur) {
-                val lay = measurer.measure((i + 1).toString().padStart(2, '0'), numStyle.copy(fontSize = 8.5.sp, color = if (cur) K.needle else K.scaleInk))
-                drawText(lay, topLeft = Offset(x - lay.size.width / 2f, baseY + 5.dp.toPx()))
+            drawLine(
+                if (cur) K.needle else K.scaleInk,
+                Offset(x, baseY - 4.dp.toPx()), Offset(x, baseY + 6.dp.toPx()),
+                (if (cur) 1.8 else 1.1).dp.toPx()
+            )
+            if (i % labelEvery == 0 || cur) {
+                val lay = measurer.measure(
+                    (i + 1).toString().padStart(2, '0'),
+                    numStyle.copy(fontSize = 9.sp, color = if (cur) K.needle else K.scaleInk)
+                )
+                drawText(lay, topLeft = Offset(x - lay.size.width / 2f, baseY + 8.dp.toPx()))
             }
         }
-        // needle
+        // thin frame lines top and bottom, like the printed dial glass
+        drawLine(K.scaleInk2.copy(alpha = 0.35f), Offset(0f, size.height - 3.dp.toPx()), Offset(size.width, size.height - 3.dp.toPx()), 0.6.dp.toPx())
+
+        // ---- needle
         val nx = x0 + (x1 - x0) * shown.coerceIn(0f, 1f)
-        drawRect(K.needle.copy(alpha = 0.25f), Offset(nx - 3.dp.toPx(), 4.dp.toPx()), Size(6.dp.toPx(), size.height - 8.dp.toPx()))
-        drawRect(K.needle, Offset(nx - 1.dp.toPx(), 4.dp.toPx()), Size(2.dp.toPx(), size.height - 8.dp.toPx()))
+        drawRect(K.needle.copy(alpha = 0.22f), Offset(nx - 3.dp.toPx(), 3.dp.toPx()), Size(6.dp.toPx(), size.height - 6.dp.toPx()))
+        drawRect(K.needle, Offset(nx - 1.dp.toPx(), 3.dp.toPx()), Size(2.dp.toPx(), size.height - 6.dp.toPx()))
         // inner shadow
         drawRect(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.12f), Color.Transparent), endY = 4.dp.toPx()))
     }

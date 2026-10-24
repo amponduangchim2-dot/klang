@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -125,18 +126,22 @@ fun PlayerScreen(ui: PlayerUi, sleepChoice: Int, sleepLeftMs: Long, libraryCount
                 )
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     LcdBox(Modifier.fillMaxWidth().clickable { remaining = !remaining }) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                            Text(if (ui.isPlaying) "▶ play" else if (ui.positionMs > 0) "pause" else "stop", style = K.lcdSmall.copy(color = K.seg))
-                            Text("${ui.kbps ?: "—"}kbps", style = K.lcdSmall)
-                            Text("${ui.khz ?: "—"}kHz", style = K.lcdSmall)
-                        }
                         Text(
-                            when (ui.stereo) { true -> "stereo"; false -> "mono"; null -> " " },
-                            style = K.lcdSmall
+                            if (ui.isPlaying) "▶ play" else if (ui.positionMs > 0) "❚❚ pause" else "■ stop",
+                            style = K.lcdSmall.copy(color = K.seg), maxLines = 1, softWrap = false
+                        )
+                        Text(
+                            listOfNotNull(
+                                ui.kbps?.let { "${it}kbps" },
+                                ui.khz?.let { "${it}kHz" },
+                                when (ui.stereo) { true -> "stereo"; false -> "mono"; null -> null },
+                            ).joinToString("  ").ifEmpty { " " },
+                            style = K.lcdSmall.copy(fontSize = 9.sp), maxLines = 1, softWrap = false,
+                            overflow = TextOverflow.Clip
                         )
                         Spacer(Modifier.height(4.dp))
                         val shownMs = if (remaining) (ui.durationMs - ui.positionMs).coerceAtLeast(0L) else ui.positionMs
-                        SevenSegment(lcdTime(shownMs, remaining), height = 36.dp)
+                        SevenSegment(lcdTime(shownMs, remaining), height = 34.dp)
                         Spacer(Modifier.height(4.dp))
                         val title = when {
                             !ui.hasMedia -> "open music from the library"
@@ -145,7 +150,7 @@ fun PlayerScreen(ui: PlayerUi, sleepChoice: Int, sleepLeftMs: Long, libraryCount
                         }
                         Text(
                             "$title   ",
-                            style = K.lcdText,
+                            style = K.lcd(title),
                             maxLines = 1,
                             modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE)
                         )
@@ -185,7 +190,7 @@ fun PlayerScreen(ui: PlayerUi, sleepChoice: Int, sleepLeftMs: Long, libraryCount
 
         // ---- transport: piano keys
         Tile {
-            PianoRow(Modifier.fillMaxWidth().height(56.dp)) {
+            PianoRow(Modifier.fillMaxWidth().height(54.dp)) {
                 GlyphKey(Glyph.Prev, a.previous, Modifier.weight(1f).fillMaxHeight(), description = "Previous")
                 GlyphKey(Glyph.Stop, a.stop, Modifier.weight(1f).fillMaxHeight(), description = "Stop")
                 GlyphKey(
@@ -204,12 +209,14 @@ fun PlayerScreen(ui: PlayerUi, sleepChoice: Int, sleepLeftMs: Long, libraryCount
             Tile(Modifier.weight(1f).fillMaxHeight()) {
                 LabelRow("volume", (ui.volume * 100).toInt().toString())
                 Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.weight(1f))
                 Knob(
                     value = ui.volume,
                     onChange = a.setVolume,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp),
+                    modifier = Modifier.align(Alignment.CenterHorizontally).widthIn(max = 128.dp).fillMaxWidth(),
                     description = "Volume ${(ui.volume * 100).toInt()} percent",
                 )
+                Spacer(Modifier.weight(1f))
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(gap)) {
                 Tile(Modifier.fillMaxWidth()) {

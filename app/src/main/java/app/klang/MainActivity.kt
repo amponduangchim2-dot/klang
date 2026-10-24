@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,6 +30,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -102,6 +105,12 @@ class MainActivity : ComponentActivity() {
 
             val currentUri = queue.getOrNull(ui.index)?.uri
 
+            // Keep the device face in proportion: cap the system font scale at 1.0
+            // (the product design has fixed text sizes, like printed labels).
+            val baseDensity = LocalDensity.current
+            CompositionLocalProvider(
+                LocalDensity provides Density(baseDensity.density, minOf(baseDensity.fontScale, 1f))
+            ) {
             Box(
                 Modifier
                     .fillMaxSize()
@@ -136,6 +145,7 @@ class MainActivity : ComponentActivity() {
                         onOpenLibrary = { screen = Screen.Library },
                     )
                 }
+            }
             }
         }
     }
