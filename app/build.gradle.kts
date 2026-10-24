@@ -12,8 +12,8 @@ android {
         applicationId = "app.klang.player"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.3.0"
+        versionCode = 6
+        versionName = "0.4.0"
     }
 
     // One fixed key so every build can be installed over the previous one.
@@ -34,6 +34,7 @@ android {
     }
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -42,6 +43,11 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+    packaging {
+        resources {
+            excludes += setOf("META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*", "META-INF/*.kotlin_module", "META-INF/versions/9/OSGI-INF/MANIFEST.MF")
+        }
     }
 }
 
@@ -60,4 +66,9 @@ dependencies {
 
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     implementation("androidx.media3:media3-session:1.4.1")
+    implementation("androidx.media3:media3-datasource:1.4.1")
+
+    // YouTube search and stream extraction (GPL-3.0), the same library Droidamp uses
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.2")
 }

@@ -28,6 +28,10 @@ import app.klang.playlist.isPlayable
 import app.klang.playlist.keepAccess
 import app.klang.playlist.songFromDocument
 import app.klang.playlist.songFromUrl
+import app.klang.youtube.Bookmark
+import app.klang.youtube.YouTube
+import app.klang.youtube.YtItem
+import androidx.media3.common.PlaybackException
 import app.klang.playback.AudioEngine
 import app.klang.playback.PlaybackService
 import com.google.common.util.concurrent.ListenableFuture
@@ -70,6 +74,18 @@ data class EqUi(
     val presetName: String? = "Flat",
     val mine: List<EqPreset> = emptyList(),
     val shade: Boolean = false,
+)
+
+data class SearchUi(
+    val query: String = "",
+    val loading: Boolean = false,
+    val error: String? = null,
+    /** Title above the results: the query, or a bookmark's name. */
+    val heading: String? = null,
+    val results: List<YtItem> = emptyList(),
+    val suggestions: List<String> = emptyList(),
+    val history: List<String> = emptyList(),
+    val bookmarks: List<Bookmark> = emptyList(),
 )
 
 /** Sleep timer choices, same set as the original app. */
@@ -119,11 +135,31 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     val message: StateFlow<String?> = _message
     fun messageShown() { _message.value = null }
 
+    private val _search = MutableStateFlow(SearchUi())
+    val search: StateFlow<SearchUi> = _search
+
+    private val _skipNonMusic = MutableStateFlow(true)
+    val skipNonMusic: StateFlow<Boolean> = _skipNonMusic
+    private val segmentLoads = HashSet<String>()
+
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var controller: MediaController? = null
 
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) = refresh()
+        override fun onPlayerError(error: PlaybackException) {
+            val why = generateSequence(error as Throwable) { it.cause }
+                .firstOrNull { it is app.klang.youtube.TrackUnavailable }?.message
+                ?: error.cause?.message?.take(80) ?: error.errorCodeName
+            _message.value = "Cannot play that: $why"
+            val c = controller ?: return
+            if (c.hasNextMediaItem()) {
+                c.seekToNextMediaItem()
+                c.prepare()
+                c.play()
+            }
+        }
+
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             if (_eq.value.auto) mediaItem?.mediaId?.let { applyAutoPresetFor(it) }
             if (_sleep.value == SLEEP_MINUTES.lastIndex && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
@@ -152,6 +188,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             mine = loadMine(),
         )
         _favorites.value = prefs.getStringSet("favorites", emptySet())!!.toSet()
+        _skipNonMusic.value = prefs.getBoolean("skipNonMusic", true)
+        _search.value = SearchUi(history = loadHistory(), bookmarks = loadBookmarks())
         _savedNames.value = savedLists.names()
         _listName.value = prefs.getString("listName", "list 1")!!
         connect()
@@ -159,6 +197,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             var tick = 0
             while (true) {
                 refresh()
+                skipSegmentsIfNeeded()
                 if (++tick % 20 == 0) saveQueueState()
                 delay(250)
             }
@@ -537,6 +576,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun addUrl(url: String): String? {
         val u = url.trim()
+        if (YouTube.isYouTube(u)) { openYouTubeLink(u, play = false); return null }
         if (!u.startsWith("http://") && !u.startsWith("https://")) return "Type a link that starts with http:// or https://"
         appendSongs(listOf(songFromUrl(u)))
         return null
@@ -756,6 +796,162 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         val idx = prefs.getInt("queueIndex", 0).coerceIn(0, songs.size - 1)
         c.setMediaItems(songs.map { it.toItem() }, idx, prefs.getLong("queuePos", 0L))
         c.prepare()
+    }
+
+    // ---- YouTube ----
+
+    private fun ytSong(it: YtItem): Song {
+        val id = YouTube.videoId(it.url)
+        val url = id?.let { v -> YouTube.watchUrl(v) } ?: it.url
+        return Song(-((url.hashCode().toLong() and 0xffffffffL) + 1L), url, it.title, it.uploader, "YouTube", it.durationSec * 1000L, 0L)
+    }
+
+    fun setQuery(q: String) {
+        _search.value = _search.value.copy(query = q, error = null)
+    }
+
+    fun loadSuggestions(q: String) {
+        viewModelScope.launch {
+            val list = withContext(Dispatchers.IO) { YouTube.suggestions(q) }
+            if (_search.value.query == q) _search.value = _search.value.copy(suggestions = list.take(8))
+        }
+    }
+
+    /** Search box: a video, playlist or channel link is opened directly; anything else is searched. */
+    fun submitSearch(raw: String) {
+        val q = raw.trim()
+        if (q.isEmpty()) return
+        _search.value = _search.value.copy(query = q, suggestions = emptyList())
+        if (YouTube.isYouTube(q)) { openYouTubeLink(q, play = true); return }
+        rememberQuery(q)
+        _search.value = _search.value.copy(loading = true, error = null, heading = q)
+        viewModelScope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { YouTube.search(q) } }
+            r.onSuccess { list ->
+                _search.value = _search.value.copy(loading = false, results = list, error = if (list.isEmpty()) "No videos found" else null)
+            }.onFailure {
+                _search.value = _search.value.copy(loading = false, error = it.message ?: "Search failed (the app may need updating)")
+            }
+        }
+    }
+
+    private fun openYouTubeLink(url: String, play: Boolean) {
+        when {
+            YouTube.isVideoLink(url) && !(YouTube.isPlaylistLink(url) && url.contains("/playlist")) -> {
+                viewModelScope.launch {
+                    _search.value = _search.value.copy(loading = true, error = null)
+                    val r = withContext(Dispatchers.IO) { runCatching { YouTube.resolve(url) } }
+                    _search.value = _search.value.copy(loading = false)
+                    r.onSuccess { res ->
+                        appendSongs(listOf(ytSong(YtItem(res.pageUrl, res.title, res.uploader, res.durationSec, null))), playNow = play)
+                    }.onFailure { _message.value = it.message ?: "Could not add that link" }
+                }
+            }
+            YouTube.isPlaylistLink(url) -> importYouTubePlaylist(url)
+            YouTube.isChannelLink(url) -> addBookmark(url)
+            else -> _message.value = "Klang doesn't understand that link."
+        }
+    }
+
+    private fun importYouTubePlaylist(url: String) {
+        _message.value = "Importing playlist…"
+        viewModelScope.launch {
+            var first = true
+            val r = withContext(Dispatchers.IO) {
+                runCatching {
+                    YouTube.importPlaylist(url) { page ->
+                        viewModelScope.launch {
+                            appendSongs(page.map { ytSong(it) }, playNow = first && controller?.isPlaying != true)
+                            first = false
+                        }
+                    }
+                }
+            }
+            r.onFailure { _message.value = it.message ?: "Could not load that channel or playlist" }
+        }
+    }
+
+    fun playResult(item: YtItem) = appendSongs(listOf(ytSong(item)), playNow = true)
+    fun addResult(item: YtItem) = appendSongs(listOf(ytSong(item)))
+    fun addAllResults() = appendSongs(_search.value.results.map { ytSong(it) })
+
+    // history
+    private fun loadHistory(): List<String> = runCatching {
+        val a = JSONArray(prefs.getString("searchHistory", "[]")); (0 until a.length()).map { a.getString(it) }
+    }.getOrDefault(emptyList())
+
+    private fun rememberQuery(q: String) {
+        val h = (listOf(q) + _search.value.history.filterNot { it.equals(q, true) }).take(20)
+        prefs.edit().putString("searchHistory", JSONArray(h).toString()).apply()
+        _search.value = _search.value.copy(history = h)
+    }
+
+    fun clearHistory() {
+        prefs.edit().remove("searchHistory").apply()
+        _search.value = _search.value.copy(history = emptyList())
+    }
+
+    // bookmarks
+    private fun loadBookmarks(): List<Bookmark> = runCatching {
+        val a = JSONArray(prefs.getString("bookmarks", "[]"))
+        (0 until a.length()).map { val o = a.getJSONObject(it); Bookmark(o.getString("n"), o.getString("u"), o.optBoolean("c")) }
+    }.getOrDefault(emptyList())
+
+    private fun saveBookmarks(list: List<Bookmark>) {
+        val a = JSONArray()
+        list.forEach { a.put(JSONObject().put("n", it.name).put("u", it.url).put("c", it.isChannel)) }
+        prefs.edit().putString("bookmarks", a.toString()).apply()
+        _search.value = _search.value.copy(bookmarks = list)
+    }
+
+    fun addBookmark(url: String) {
+        _search.value = _search.value.copy(loading = true, error = null)
+        viewModelScope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { YouTube.bookmarkInfo(url) } }
+            r.onSuccess { (b, videos) ->
+                if (_search.value.bookmarks.none { it.url == b.url }) saveBookmarks(_search.value.bookmarks + b)
+                _search.value = _search.value.copy(loading = false, heading = b.name, results = videos)
+                _message.value = "Bookmarked ${b.name}"
+            }.onFailure {
+                _search.value = _search.value.copy(loading = false, error = it.message ?: "Could not load that channel or playlist")
+            }
+        }
+    }
+
+    fun openBookmark(b: Bookmark) {
+        _search.value = _search.value.copy(loading = true, error = null, heading = b.name, results = emptyList())
+        viewModelScope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { YouTube.bookmarkInfo(b.url) } }
+            r.onSuccess { (_, videos) ->
+                _search.value = _search.value.copy(loading = false, results = videos, error = if (videos.isEmpty()) "No videos" else null)
+            }.onFailure { _search.value = _search.value.copy(loading = false, error = it.message ?: "Could not load") }
+        }
+    }
+
+    fun deleteBookmark(b: Bookmark) = saveBookmarks(_search.value.bookmarks.filterNot { it.url == b.url })
+
+    // skip non-music parts (SponsorBlock "music_offtopic")
+    fun setSkipNonMusic(on: Boolean) {
+        _skipNonMusic.value = on
+        prefs.edit().putBoolean("skipNonMusic", on).apply()
+    }
+
+    private fun skipSegmentsIfNeeded() {
+        if (!_skipNonMusic.value) return
+        val c = controller ?: return
+        val id = c.currentMediaItem?.mediaId?.let { YouTube.videoId(it) } ?: return
+        val segs = YouTube.segmentsCached(id)
+        if (segs == null) {
+            if (segmentLoads.add(id)) viewModelScope.launch(Dispatchers.IO) { YouTube.loadSegments(id) }
+            return
+        }
+        if (!c.isPlaying) return
+        val pos = c.currentPosition / 1000.0
+        val hit = segs.firstOrNull { pos >= it.startSec && pos < it.endSec - 0.5 } ?: return
+        val dur = c.duration
+        val target = (hit.endSec * 1000).toLong()
+        if (dur > 0 && target >= dur - 1000) next() else c.seekTo(target)
+        _message.value = "Skipped a non-music part"
     }
 
     // ---- sleep timer ----

@@ -274,7 +274,7 @@ fun PlayerScreen(ui: PlayerUi, sleepChoice: Int, sleepLeftMs: Long, libraryCount
         val sleepLabel = if (sleepChoice == 0) "off" else if (sleepLeftMs > 0) formatTime(sleepLeftMs) + " left" else SLEEP_CHOICES[sleepChoice]
         val tools = listOf(
             ToolSpec("library", Glyph.Library, "$libraryCount songs") { a.open(Screen.Library) },
-            ToolSpec("search", Glyph.Search, null) { a.notYet("YouTube search") },
+            ToolSpec("search", Glyph.Search, "youtube") { a.open(Screen.Search) },
             ToolSpec("lyrics", Glyph.Lyrics, null) { a.notYet("Lyrics") },
             ToolSpec("skins", Glyph.Skins, null) { a.notYet("Skins") },
             ToolSpec("sleep", Glyph.Sleep, sleepLabel, active = sleepChoice != 0) { a.cycleSleep() },

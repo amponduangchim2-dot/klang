@@ -33,7 +33,7 @@ import app.klang.ui.components.LcdBox
 import app.klang.ui.components.TextKey
 import app.klang.ui.components.Tile
 
-enum class Screen { Player, Library, LibraryAdd, Queue, Eq }
+enum class Screen { Player, Library, LibraryAdd, Queue, Eq, Search }
 
 @Composable
 fun ScreenHeader(title: String, model: String, onBack: () -> Unit) {

@@ -4,6 +4,12 @@ package app.klang.playback
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.net.Uri
+import app.klang.youtube.YouTube
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.ResolvingDataSource
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -36,7 +42,27 @@ class PlaybackService : MediaSessionService() {
                 MediaCodecAudioRenderer(context, MediaCodecSelector.DEFAULT, handler, audioListener, sink)
             )
         }
-        val player = ExoPlayer.Builder(context, renderers)
+        // YouTube watch links are resolved to an audio stream only when playback starts,
+        // so links in the playlist never go stale.
+        val http = DefaultHttpDataSource.Factory()
+            .setAllowCrossProtocolRedirects(true)
+            .setConnectTimeoutMs(20_000)
+            .setReadTimeoutMs(30_000)
+        val upstream = DefaultDataSource.Factory(context, http)
+        val resolving = ResolvingDataSource.Factory(upstream) { spec ->
+            val uri = spec.uri.toString()
+            if (YouTube.isVideoLink(uri)) {
+                val r = YouTube.resolve(uri)
+                spec.buildUpon()
+                    .setUri(Uri.parse(r.streamUrl))
+                    .setHttpRequestHeaders(spec.httpRequestHeaders + mapOf("User-Agent" to YouTube.userAgentFor(r.streamUrl)))
+                    .build()
+            } else if (spec.uri.scheme == "http" || spec.uri.scheme == "https") {
+                // The factory's own user agent would override per-request headers, so set it here.
+                spec.withAdditionalHeaders(mapOf("User-Agent" to YouTube.BROWSER_UA))
+            } else spec
+        }
+        val player = ExoPlayer.Builder(context, renderers, DefaultMediaSourceFactory(resolving))
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)

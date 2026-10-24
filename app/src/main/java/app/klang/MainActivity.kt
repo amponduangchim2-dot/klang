@@ -2,6 +2,7 @@ package app.klang
 
 import android.Manifest
 import android.content.Intent
+import android.speech.RecognizerIntent
 import android.content.pm.PackageManager
 import android.graphics.Color as AColor
 import android.os.Build
@@ -41,6 +42,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import app.klang.ui.EqActions
 import app.klang.ui.EqScreen
 import app.klang.ui.K
+import app.klang.ui.SearchActions
+import app.klang.ui.SearchScreen
 import app.klang.ui.PlaylistActions
 import app.klang.ui.PlaylistScreen
 import app.klang.ui.LibraryScreen
@@ -104,6 +107,12 @@ class MainActivity : ComponentActivity() {
             val favorites by vm.favorites.collectAsStateWithLifecycle()
             val listName by vm.listName.collectAsStateWithLifecycle()
             val savedNames by vm.savedNames.collectAsStateWithLifecycle()
+            val searchUi by vm.search.collectAsStateWithLifecycle()
+            val skipNonMusic by vm.skipNonMusic.collectAsStateWithLifecycle()
+            val voiceLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+                val text = res.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+                if (!text.isNullOrBlank()) { vm.setQuery(text); vm.submitSearch(text) }
+            }
             val filesLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
                 if (uris.isNotEmpty()) vm.addDocuments(uris)
             }
@@ -191,6 +200,31 @@ class MainActivity : ComponentActivity() {
 
             val currentUri = queue.getOrNull(ui.index)?.song?.uri
 
+            val searchActions = remember(vm) {
+                SearchActions(
+                    back = { screen = Screen.Player },
+                    setQuery = vm::setQuery,
+                    suggest = vm::loadSuggestions,
+                    submit = vm::submitSearch,
+                    voice = {
+                        val i = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                            .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                            .putExtra(RecognizerIntent.EXTRA_PROMPT, "Say a song or an artist")
+                        runCatching { voiceLauncher.launch(i) }.onFailure {
+                            Toast.makeText(this@MainActivity, "Voice search is not available on this phone", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    play = vm::playResult,
+                    add = vm::addResult,
+                    addAll = vm::addAllResults,
+                    clearHistory = vm::clearHistory,
+                    openBookmark = vm::openBookmark,
+                    deleteBookmark = vm::deleteBookmark,
+                    addBookmark = vm::addBookmark,
+                    toggleSkip = { vm.setSkipNonMusic(!vm.skipNonMusic.value) },
+                )
+            }
+
             val playlistActions = remember(vm) {
                 PlaylistActions(
                     back = { screen = Screen.Player },
@@ -275,6 +309,7 @@ class MainActivity : ComponentActivity() {
                             )
                         })
                     }
+                    Screen.Search -> SearchScreen(searchUi, skipNonMusic, searchActions)
                     Screen.LibraryAdd -> LibraryScreen(
                         songs = songs,
                         hasPermission = hasPermission,
