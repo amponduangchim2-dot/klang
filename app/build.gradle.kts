@@ -12,8 +12,8 @@ android {
         applicationId = "app.klang.player"
         minSdk = 26
         targetSdk = 35
-        versionCode = 16
-        versionName = "0.9.2"
+        versionCode = 17
+        versionName = "0.9.3"
     }
 
     // One fixed key so every build can be installed over the previous one.
