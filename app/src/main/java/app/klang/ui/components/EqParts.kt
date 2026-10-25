@@ -178,7 +178,7 @@ fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit, mod
                 Modifier
                     .then(if (on) Modifier.shadow(1.5.dp, RoundedCornerShape(50)) else Modifier)
                     .clip(RoundedCornerShape(50))
-                    .background(if (on) Color.White else Color.Transparent)
+                    .background(if (on) K.keyHi else Color.Transparent)
                     .clickable { onSelect(i) }
                     .padding(horizontal = 14.dp, vertical = 6.dp),
                 contentAlignment = Alignment.Center
@@ -195,7 +195,7 @@ fun Chip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifie
     Row(
         modifier
             .clip(RoundedCornerShape(8.dp))
-            .background(if (selected) K.ink else K.shell)
+            .background(if (selected) K.keyOn else K.shell)
             .then(if (selected) Modifier else Modifier.border(1.dp, K.line, RoundedCornerShape(8.dp)))
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 6.dp),
@@ -204,7 +204,7 @@ fun Chip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifie
         if (selected) {
             Box(Modifier.padding(end = 4.dp)) { Lamp(true) }
         }
-        Text(text, style = K.body.copy(fontSize = 13.sp, color = if (selected) Color.White else K.ink))
+        Text(text, style = K.body.copy(fontSize = 13.sp, color = if (selected) K.keyOnInk else K.ink))
     }
 }
 

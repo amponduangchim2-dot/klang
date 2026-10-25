@@ -144,15 +144,15 @@ fun Key(
     val shape = RoundedCornerShape(corner)
     val face = when {
         orange -> listOf(K.orangeLight, K.orange)
-        dark -> listOf(K.ink, Color(0xFF111110))
+        dark -> listOf(K.keyOn, K.keyOnLo)
         else -> listOf(K.keyHi, K.keyLo)
     }
     val lip = when {
         orange -> K.orangeDark
-        dark -> Color(0xFF000000)
+        dark -> K.keyOnLip
         else -> K.keyLip
     }
-    val fg = if (orange || dark) Color.White else K.ink
+    val fg = if (orange) Color.White else if (dark) K.keyOnInk else K.ink
     val travel = if (pressed) 1.5.dp else 0.dp
     Box(
         modifier
@@ -174,7 +174,7 @@ fun Key(
                 .padding(bottom = 2.5.dp)
                 .offset(y = travel)
                 .background(Brush.verticalGradient(face), shape)
-                .border(0.5.dp, Color.White.copy(alpha = if (orange || dark) 0.15f else 0.8f), shape),
+                .border(0.5.dp, Color.White.copy(alpha = if (orange || dark || K.skin.dark) 0.12f else 0.8f), shape),
             contentAlignment = Alignment.Center
         ) { content(fg) }
     }
@@ -221,7 +221,7 @@ fun PushButton(on: Boolean, onClick: () -> Unit, label: String, modifier: Modifi
             val c = center
             val outer = size.minDimension / 2f
             drawCircle(K.line, outer)
-            drawCircle(Color.White, outer - 1.dp.toPx())
+            drawCircle(if (K.skin.dark) K.tile2 else Color.White, outer - 1.dp.toPx())
             drawCircle(K.tile2, outer - 3.dp.toPx())
             drawCircle(K.shell, outer - 4.dp.toPx())
             val r = (outer - 7.dp.toPx()) * if (on) 0.9f else 1f
@@ -274,7 +274,7 @@ fun Knob(
             val major = i % majorEvery == 0
             val rr = r * 0.94f
             drawCircle(
-                if (major) Color(0xFF3A3A37) else K.ink3,
+                if (major) K.tickMajor else K.ink3,
                 if (major) 1.6.dp.toPx() else 1.dp.toPx(),
                 Offset(c.x + rr * sin(a).toFloat(), c.y - rr * cos(a).toFloat())
             )
@@ -292,7 +292,7 @@ fun Knob(
         rotate(-135f + current * 270f, c) {
             if (style == KnobStyle.White) {
                 drawRoundRect(
-                    K.ink,
+                    Color(0xFF232321),
                     topLeft = Offset(c.x - 2.5.dp.toPx(), c.y - body * 0.88f),
                     size = androidx.compose.ui.geometry.Size(5.dp.toPx(), body * 0.26f),
                     cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx())

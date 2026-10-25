@@ -86,7 +86,7 @@ class PlayerActions(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun PlayerScreen(ui: PlayerUi, sleepChoice: Int, sleepLeftMs: Long, libraryCount: Int, eqBands: List<Float>, eqPreset: String?, a: PlayerActions) {
+fun PlayerScreen(ui: PlayerUi, sleepChoice: Int, sleepLeftMs: Long, libraryCount: Int, eqBands: List<Float>, eqPreset: String?, a: PlayerActions, big: Boolean = false) {
     var vis by rememberSaveable { mutableStateOf(VisMode.Spectrum) }
     var remaining by rememberSaveable { mutableStateOf(false) }
     val gap = 8.dp
@@ -190,17 +190,20 @@ fun PlayerScreen(ui: PlayerUi, sleepChoice: Int, sleepLeftMs: Long, libraryCount
 
         // ---- transport: piano keys
         Tile {
-            PianoRow(Modifier.fillMaxWidth().height(54.dp)) {
-                GlyphKey(Glyph.Prev, a.previous, Modifier.weight(1f).fillMaxHeight(), description = "Previous")
-                GlyphKey(Glyph.Stop, a.stop, Modifier.weight(1f).fillMaxHeight(), description = "Stop")
+            val ic = if (big) 28.dp else 18.dp
+            PianoRow(Modifier.fillMaxWidth().height(if (big) 92.dp else 54.dp)) {
+                GlyphKey(Glyph.Prev, a.previous, Modifier.weight(1f).fillMaxHeight(), description = "Previous", iconSize = ic)
+                if (!big) GlyphKey(Glyph.Stop, a.stop, Modifier.weight(1f).fillMaxHeight(), description = "Stop")
                 GlyphKey(
                     if (ui.isPlaying) Glyph.Pause else Glyph.Play, a.togglePlay,
-                    Modifier.weight(1.4f).fillMaxHeight(), orange = true,
-                    description = if (ui.isPlaying) "Pause" else "Play"
+                    Modifier.weight(if (big) 1.8f else 1.4f).fillMaxHeight(), orange = true,
+                    description = if (ui.isPlaying) "Pause" else "Play", iconSize = ic
                 )
-                GlyphKey(Glyph.Next, a.next, Modifier.weight(1f).fillMaxHeight(), description = "Next")
-                GlyphKey(Glyph.Pause, a.pause, Modifier.weight(1f).fillMaxHeight(), description = "Pause")
-                GlyphKey(Glyph.Eject, { a.open(Screen.Library) }, Modifier.weight(1f).fillMaxHeight(), description = "Open music")
+                GlyphKey(Glyph.Next, a.next, Modifier.weight(1f).fillMaxHeight(), description = "Next", iconSize = ic)
+                if (!big) {
+                    GlyphKey(Glyph.Pause, a.pause, Modifier.weight(1f).fillMaxHeight(), description = "Pause")
+                    GlyphKey(Glyph.Eject, { a.open(Screen.Library) }, Modifier.weight(1f).fillMaxHeight(), description = "Open music")
+                }
             }
         }
 
@@ -276,11 +279,11 @@ fun PlayerScreen(ui: PlayerUi, sleepChoice: Int, sleepLeftMs: Long, libraryCount
             ToolSpec("library", Glyph.Library, "$libraryCount songs") { a.open(Screen.Hub) },
             ToolSpec("search", Glyph.Search, "youtube") { a.open(Screen.Search) },
             ToolSpec("lyrics", Glyph.Lyrics, "lrclib") { a.open(Screen.Lyrics) },
-            ToolSpec("skins", Glyph.Skins, null) { a.notYet("Skins") },
+            ToolSpec("skins", Glyph.Skins, Skins.byId(K.skin.id).label) { a.open(Screen.Skins) },
             ToolSpec("sleep", Glyph.Sleep, sleepLabel, active = sleepChoice != 0) { a.cycleSleep() },
             ToolSpec("cast", Glyph.Cast, "off") { a.notYet("Cast") },
-            ToolSpec("share", Glyph.Share, null) { a.notYet("Share") },
-            ToolSpec("options", Glyph.Options, null) { a.notYet("Options") },
+            ToolSpec("share", Glyph.Share, "card") { a.open(Screen.Share) },
+            ToolSpec("options", Glyph.Options, null) { a.open(Screen.Options) },
         )
         tools.chunked(4).forEach { row ->
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(gap)) {

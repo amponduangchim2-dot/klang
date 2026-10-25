@@ -34,6 +34,12 @@ jobs:
             echo "::error::${line//%/%25}"
           done
 
+      - name: Read version
+        id: ver
+        run: |
+          echo "name=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)" >> "$GITHUB_OUTPUT"
+          echo "code=$(grep -oP 'versionCode = \K[0-9]+' app/build.gradle.kts)" >> "$GITHUB_OUTPUT"
+
       - name: Rename APK
         run: |
           mkdir -p out
@@ -49,10 +55,12 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: Klang (latest build)
+          name: Klang ${{ steps.ver.outputs.name }}
           prerelease: true
           make_latest: false
           files: out/klang.apk
           body: |
             Newest build of Klang from commit ${{ github.sha }}.
+            versionName: ${{ steps.ver.outputs.name }}
+            versionCode: ${{ steps.ver.outputs.code }}
             On your phone: download klang.apk and open it to install.

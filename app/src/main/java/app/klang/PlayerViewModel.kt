@@ -17,6 +17,8 @@ import app.klang.eq.BuiltInPresets
 import app.klang.eq.EqPreset
 import app.klang.eq.Eqf
 import app.klang.library.LibraryStore
+import app.klang.ui.K
+import app.klang.ui.Skins
 import app.klang.library.LocalMusic
 import app.klang.lyrics.LrcLib
 import app.klang.lyrics.LyricLine
@@ -107,6 +109,24 @@ data class LyricsUi(
     val source: String? = null,
 )
 
+data class UpdateUi(
+    val checking: Boolean = false,
+    val message: String? = null,
+    val downloadUrl: String? = null,
+)
+
+data class OptionsUi(
+    val skin: String = "studio",
+    val fadeSec: Int = 0,
+    val bigControls: Boolean = false,
+    val keepScreenOn: Boolean = false,
+    val versionName: String = "",
+    val versionCode: Long = 0,
+    val update: UpdateUi = UpdateUi(),
+)
+
+val FADE_CHOICES = listOf(0, 2, 4, 6, 8)
+
 /** Sleep timer choices, same set as the original app. */
 val SLEEP_CHOICES = listOf("off", "15 min", "30 min", "45 min", "60 min", "90 min", "end of song")
 private val SLEEP_MINUTES = listOf(0, 15, 30, 45, 60, 90, -1)
@@ -161,6 +181,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     val skipNonMusic: StateFlow<Boolean> = _skipNonMusic
     private val segmentLoads = HashSet<String>()
 
+    private val _options = MutableStateFlow(OptionsUi())
+    val options: StateFlow<OptionsUi> = _options
+
     private val store = LibraryStore(app)
     private val _lists = MutableStateFlow(LibraryLists())
     val lists: StateFlow<LibraryLists> = _lists
@@ -198,6 +221,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         AudioEngine.balance = prefs.getFloat("balance", 0f)
+        AudioEngine.userVolume = prefs.getFloat("volume", 0.7f)
+        loadOptions()
         AudioEngine.eqEnabled = prefs.getBoolean("eqOn", true)
         AudioEngine.preampDb = prefs.getFloat("preamp", 0f)
         AudioEngine.setAllGains(FloatArray(AudioEngine.BAND_COUNT) { prefs.getFloat("eq$it", 0f) })
@@ -242,7 +267,6 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             val c = runCatching { future.get() }.getOrNull() ?: return@addListener
             controller = c
             c.addListener(listener)
-            c.volume = _ui.value.volume
             c.shuffleModeEnabled = prefs.getBoolean("shuffle", false)
             c.repeatMode = when (prefs.getInt("repeat", 0)) {
                 1 -> Player.REPEAT_MODE_ALL
@@ -391,7 +415,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     // ---- settings ----
     fun setVolume(v: Float) {
         val vol = v.coerceIn(0f, 1f)
-        controller?.volume = vol
+        AudioEngine.userVolume = vol
         _ui.value = _ui.value.copy(volume = vol)
         prefs.edit().putFloat("volume", vol).apply()
     }
@@ -793,6 +817,98 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             }.onFailure {
                 _lyrics.value = LyricsUi(forUri = song.uri, message = (it as? LyricsUnavailable)?.message ?: "No lyrics found for this song.")
             }
+        }
+    }
+
+    // ---- options, skins, share, updates ----
+    private fun loadOptions() {
+        val ctx = getApplication<Application>()
+        val info = runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0) }.getOrNull()
+        val code = if (info == null) 0L else if (android.os.Build.VERSION.SDK_INT >= 28) info.longVersionCode else @Suppress("DEPRECATION") info.versionCode.toLong()
+        val o = OptionsUi(
+            skin = prefs.getString("skin", "studio")!!,
+            fadeSec = prefs.getInt("fadeSec", 0),
+            bigControls = prefs.getBoolean("bigControls", false),
+            keepScreenOn = prefs.getBoolean("keepScreenOn", false),
+            versionName = info?.versionName ?: "",
+            versionCode = code,
+        )
+        _options.value = o
+        AudioEngine.fadeMs = o.fadeSec * 1000L
+        K.skin = Skins.byId(o.skin)
+    }
+
+    fun setSkin(id: String) {
+        val skin = Skins.byId(id)
+        K.skin = skin
+        _options.value = _options.value.copy(skin = skin.id)
+        prefs.edit().putString("skin", skin.id).apply()
+    }
+
+    fun setFade(sec: Int) {
+        AudioEngine.fadeMs = sec * 1000L
+        _options.value = _options.value.copy(fadeSec = sec)
+        prefs.edit().putInt("fadeSec", sec).apply()
+    }
+
+    fun setBigControls(on: Boolean) {
+        _options.value = _options.value.copy(bigControls = on)
+        prefs.edit().putBoolean("bigControls", on).apply()
+    }
+
+    fun setKeepScreenOn(on: Boolean) {
+        _options.value = _options.value.copy(keepScreenOn = on)
+        prefs.edit().putBoolean("keepScreenOn", on).apply()
+    }
+
+    /** Link that opens the current song elsewhere: YouTube links stay as they are, local files have none. */
+    fun currentLink(): String? = currentSong()?.uri?.takeIf { it.startsWith("http") }?.let { u ->
+        YouTube.videoId(u)?.let { "https://youtu.be/$it" } ?: u
+    }
+
+    fun nowPlayingText(): String? {
+        val ui = _ui.value
+        if (!ui.hasMedia || ui.title.isBlank()) return null
+        val line = if (ui.artist.isNotBlank()) "${ui.artist} – ${ui.title}" else ui.title
+        return listOfNotNull("♪ $line", currentLink(), "playing on Klang").joinToString("\n")
+    }
+
+    fun checkForUpdate() {
+        if (_options.value.update.checking) return
+        _options.value = _options.value.copy(update = UpdateUi(checking = true, message = "Checking…"))
+        viewModelScope.launch {
+            val r = withContext(Dispatchers.IO) {
+                runCatching {
+                    val conn = java.net.URL("https://api.github.com/repos/amponduangchim2-dot/klang/releases/tags/latest")
+                        .openConnection() as java.net.HttpURLConnection
+                    conn.connectTimeout = 10_000
+                    conn.readTimeout = 15_000
+                    conn.setRequestProperty("Accept", "application/vnd.github+json")
+                    conn.setRequestProperty("User-Agent", "Klang")
+                    val code = conn.responseCode
+                    if (code != 200) throw java.io.IOException("HTTP $code")
+                    val o = JSONObject(conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) })
+                    conn.disconnect()
+                    val body = o.optString("body")
+                    val newCode = Regex("versionCode:\\s*(\\d+)").find(body)?.groupValues?.get(1)?.toLongOrNull()
+                    val newName = Regex("versionName:\\s*([\\w.\\-]+)").find(body)?.groupValues?.get(1)
+                    val assets = o.optJSONArray("assets")
+                    val url = (0 until (assets?.length() ?: 0)).map { assets!!.getJSONObject(it) }
+                        .firstOrNull { it.optString("name").endsWith(".apk") }?.optString("browser_download_url")
+                    Triple(newCode, newName, url)
+                }
+            }
+            val cur = _options.value.versionCode
+            _options.value = _options.value.copy(update = r.fold(
+                onSuccess = { (code, name, url) ->
+                    when {
+                        code == null -> UpdateUi(message = "Could not tell which version is online.", downloadUrl = url)
+                        code > cur -> UpdateUi(message = "Klang ${name ?: ""} is available.".replace("  ", " "), downloadUrl = url)
+                        else -> UpdateUi(message = "You have the newest version.")
+                    }
+                },
+                onFailure = { UpdateUi(message = "Could not reach GitHub. Check the connection and try again.") }
+            ))
         }
     }
 

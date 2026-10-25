@@ -56,6 +56,18 @@ import app.klang.ui.ListKind
 import app.klang.ui.LyricsScreen
 import app.klang.ui.SongListScreen
 import app.klang.ui.ago
+import app.klang.ui.OptionsActions
+import app.klang.ui.OptionsScreen
+import app.klang.ui.ShareScreen
+import app.klang.ui.SkinsScreen
+import app.klang.share.CardFormat
+import app.klang.share.CardInfo
+import app.klang.share.ShareCard
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.mutableIntStateOf
+import android.view.WindowManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
 
@@ -83,6 +95,11 @@ class MainActivity : ComponentActivity() {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         startActivity(Intent.createChooser(send, title))
+    }
+
+    private fun openUrl(url: String) {
+        runCatching { startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))) }
+            .onFailure { Toast.makeText(this, "No browser found", Toast.LENGTH_SHORT).show() }
     }
 
     private fun shareText(text: String, title: String) {
@@ -118,6 +135,20 @@ class MainActivity : ComponentActivity() {
             val lists by vm.lists.collectAsStateWithLifecycle()
             val lyrics by vm.lyrics.collectAsStateWithLifecycle()
             var listKind by rememberSaveable { mutableStateOf(ListKind.FAVORITES) }
+            val options by vm.options.collectAsStateWithLifecycle()
+            var shareFormat by rememberSaveable { mutableIntStateOf(0) }
+
+            // system bars follow the skin
+            val darkSkin = K.skin.dark
+            LaunchedEffect(darkSkin) {
+                val style = if (darkSkin) SystemBarStyle.dark(AColor.TRANSPARENT)
+                else SystemBarStyle.light(AColor.TRANSPARENT, AColor.TRANSPARENT)
+                enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+            }
+            LaunchedEffect(options.keepScreenOn) {
+                if (options.keepScreenOn) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
             val voiceLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
                 val text = res.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
                 if (!text.isNullOrBlank()) { vm.setQuery(text); vm.submitSearch(text) }
@@ -165,6 +196,7 @@ class MainActivity : ComponentActivity() {
                 )
             }
             var screen by rememberSaveable { mutableStateOf(Screen.Player) }
+            var cameFromOptions by rememberSaveable { mutableStateOf(false) }
             var hasPermission by remember {
                 mutableStateOf(ContextCompat.checkSelfPermission(this, audioPermission) == PackageManager.PERMISSION_GRANTED)
             }
@@ -188,6 +220,7 @@ class MainActivity : ComponentActivity() {
                 screen = when (screen) {
                     Screen.LibraryAdd -> Screen.Queue
                     Screen.Songs, Screen.Bookmarks -> Screen.Hub
+                    Screen.Skins -> if (cameFromOptions) Screen.Options else Screen.Player
                     else -> Screen.Player
                 }
             }
@@ -206,7 +239,7 @@ class MainActivity : ComponentActivity() {
                     cycleRepeat = vm::cycleRepeat,
                     toggleEq = vm::toggleEq,
                     cycleSleep = vm::cycleSleep,
-                    open = { screen = it },
+                    open = { cameFromOptions = false; screen = it },
                     notYet = { what -> Toast.makeText(this, "$what arrives in the next build", Toast.LENGTH_SHORT).show() },
                 )
             }
@@ -296,7 +329,7 @@ class MainActivity : ComponentActivity() {
             ) {
                 when (screen) {
                     Screen.Player -> Box(Modifier.verticalScroll(rememberScrollState())) {
-                        PlayerScreen(ui, sleep, sleepLeft, songs.size, eq.bands, eq.presetName, actions)
+                        PlayerScreen(ui, sleep, sleepLeft, songs.size, eq.bands, eq.presetName, actions, big = options.bigControls)
                     }
                     Screen.Library -> LibraryScreen(
                         songs = songs,
@@ -384,6 +417,63 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                         }
+                    }
+                    Screen.Skins -> SkinsScreen(
+                        current = options.skin,
+                        onPick = vm::setSkin,
+                        onBack = { screen = if (cameFromOptions) Screen.Options else Screen.Player },
+                    )
+                    Screen.Options -> OptionsScreen(options, skipNonMusic, remember(vm) {
+                        OptionsActions(
+                            back = { screen = Screen.Player },
+                            setFade = vm::setFade,
+                            setBig = vm::setBigControls,
+                            setKeepOn = vm::setKeepScreenOn,
+                            setSkipTalk = vm::setSkipNonMusic,
+                            openSkins = { cameFromOptions = true; screen = Screen.Skins },
+                            checkUpdate = vm::checkForUpdate,
+                            download = { url -> openUrl(url) },
+                            openSource = { openUrl("https://github.com/amponduangchim2-dot/klang") },
+                        )
+                    })
+                    Screen.Share -> {
+                        val format = CardFormat.entries[shareFormat]
+                        val skinNow = K.skin
+                        fun cardInfo() = CardInfo(
+                            title = ui.title, artist = ui.artist,
+                            positionMs = ui.positionMs, durationMs = ui.durationMs,
+                            source = vm.currentLink()?.removePrefix("https://"),
+                            eqLabel = if (ui.eqOn) eq.presetName else null,
+                        )
+                        val preview by produceState<android.graphics.Bitmap?>(null, format, ui.title, ui.artist, skinNow) {
+                            val info = cardInfo()
+                            value = withContext(Dispatchers.Default) {
+                                runCatching { ShareCard.render(this@MainActivity, info, format, skinNow) }.getOrNull()
+                            }
+                        }
+                        ShareScreen(
+                            preview = preview,
+                            formatIndex = shareFormat,
+                            hasSong = ui.hasMedia && ui.title.isNotBlank(),
+                            link = vm.currentLink(),
+                            onFormat = { shareFormat = it },
+                            shareImage = {
+                                runCatching {
+                                    val bmp = ShareCard.render(this@MainActivity, cardInfo(), format, K.skin)
+                                    val f = ShareCard.save(this@MainActivity, bmp, format)
+                                    shareFile(f, "image/png", vm.nowPlayingText() ?: "", "Share now playing")
+                                }.onFailure { Toast.makeText(this@MainActivity, "Could not make the card", Toast.LENGTH_SHORT).show() }
+                            },
+                            shareText = { vm.nowPlayingText()?.let { shareText(it, "Share now playing") } },
+                            copyLink = {
+                                vm.currentLink()?.let { l ->
+                                    val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                    cm.setPrimaryClip(android.content.ClipData.newPlainText("Klang link", l))
+                                    Toast.makeText(this@MainActivity, "Link copied", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            onBack = { screen = Screen.Player },
+                        )
                     }
                     Screen.Lyrics -> LyricsScreen(
                         ui = ui,

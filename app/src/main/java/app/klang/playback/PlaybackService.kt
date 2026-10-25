@@ -5,6 +5,8 @@ package app.klang.playback
 import android.app.PendingIntent
 import android.content.Intent
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import app.klang.youtube.YouTube
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -30,6 +32,32 @@ import com.google.common.util.concurrent.ListenableFuture
 class PlaybackService : MediaSessionService() {
 
     private var session: MediaSession? = null
+    private val handler = Handler(Looper.getMainLooper())
+
+    /**
+     * Volume loop: applies the knob volume and fades songs out at the end and in at the start.
+     * It runs on the player's own clock, so the fade follows what is actually heard.
+     */
+    private val volumeLoop = object : Runnable {
+        override fun run() {
+            val p = session?.player ?: return
+            val target = AudioEngine.userVolume * fadeFactor(p)
+            if (kotlin.math.abs(p.volume - target) > 0.002f) p.volume = target
+            handler.postDelayed(this, 40)
+        }
+    }
+
+    private fun fadeFactor(p: androidx.media3.common.Player): Float {
+        val fade = AudioEngine.fadeMs
+        if (fade <= 0) return 1f
+        val dur = p.duration
+        if (dur == C.TIME_UNSET || dur < fade * 3) return 1f
+        val pos = p.currentPosition
+        val fin = pos.toFloat() / (fade / 2f)
+        val fout = (dur - pos).toFloat() / fade
+        val f = minOf(fin, fout).coerceIn(0f, 1f)
+        return f * f
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -97,6 +125,7 @@ class PlaybackService : MediaSessionService() {
                 }
             })
             .build()
+        handler.post(volumeLoop)
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
@@ -109,6 +138,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        handler.removeCallbacks(volumeLoop)
         session?.run {
             player.release()
             release()

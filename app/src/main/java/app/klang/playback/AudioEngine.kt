@@ -18,6 +18,12 @@ object AudioEngine {
         set(value) { field = value.coerceIn(-MAX_DB, MAX_DB); version++ }
     private val gains = FloatArray(BAND_COUNT)
 
+    /** Player volume chosen with the knob, 0..1. The service applies it, times the fade. */
+    @Volatile var userVolume: Float = 0.7f
+
+    /** Fade-out length at the end of a song (the next one fades in over half of it). 0 = off. */
+    @Volatile var fadeMs: Long = 0L
+
     /** -1 = left only, 0 = centre, +1 = right only. */
     @Volatile var balance: Float = 0f
 
