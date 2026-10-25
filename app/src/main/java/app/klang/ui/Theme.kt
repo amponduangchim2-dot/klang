@@ -129,26 +129,25 @@ object K {
     val wood2 get() = skin.wood2
     val seam get() = skin.seam
 
-    /** IBM Plex Sans Thai covers both Thai and Latin, so it is the UI face. */
+    /** Klang Sans: Outfit for Latin (capitals drawn lowercase) + IBM Plex Sans Thai for Thai, merged into one font. */
     val sans = FontFamily(
-        Font(R.font.plex_thai_regular, FontWeight.Normal),
-        Font(R.font.plex_thai_medium, FontWeight.Medium),
-        Font(R.font.plex_thai_semibold, FontWeight.SemiBold),
-        Font(R.font.plex_thai_bold, FontWeight.Bold),
+        Font(R.font.klang_regular, FontWeight.Normal),
+        Font(R.font.klang_medium, FontWeight.Medium),
+        Font(R.font.klang_semibold, FontWeight.SemiBold),
+        Font(R.font.klang_bold, FontWeight.Bold),
     )
-    val mono = FontFamily.Monospace
+    /** Numbers line up in columns (tabular figures). */
+    val mono = sans
+    private const val TNUM = "tnum"
 
     val label get() = TextStyle(fontFamily = sans, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = ink2)
     val body get() = TextStyle(fontFamily = sans, fontSize = 14.sp, color = ink)
     val name get() = TextStyle(fontFamily = sans, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold, color = ink)
-    val value get() = TextStyle(fontFamily = mono, fontSize = 12.5.sp, fontWeight = FontWeight.Medium, color = ink)
-    val lcdText get() = TextStyle(fontFamily = mono, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = seg)
-    val lcdSmall get() = TextStyle(fontFamily = mono, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = lcdDim)
+    val value get() = TextStyle(fontFamily = mono, fontSize = 12.5.sp, fontWeight = FontWeight.Medium, color = ink, fontFeatureSettings = TNUM)
+    val lcdText get() = TextStyle(fontFamily = mono, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = seg, fontFeatureSettings = TNUM)
+    val lcdSmall get() = TextStyle(fontFamily = mono, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = lcdDim, fontFeatureSettings = TNUM)
     val wordmark get() = TextStyle(fontFamily = sans, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = ink, letterSpacing = (-0.4).sp)
 
-    private val thai = Regex("[฀-๿]")
-
     /** LCD text: monospace for Latin, IBM Plex Sans Thai when the text contains Thai. */
-    fun lcd(text: String, base: TextStyle = lcdText): TextStyle =
-        if (thai.containsMatchIn(text)) base.copy(fontFamily = sans, letterSpacing = 0.sp) else base
+    fun lcd(@Suppress("UNUSED_PARAMETER") text: String, base: TextStyle = lcdText): TextStyle = base
 }

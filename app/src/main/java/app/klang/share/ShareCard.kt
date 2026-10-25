@@ -44,10 +44,10 @@ object ShareCard {
         val h = format.h.toFloat()
         val bmp = Bitmap.createBitmap(format.w, format.h, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
-        val sans = ResourcesCompat.getFont(context, R.font.plex_thai_regular) ?: Typeface.DEFAULT
-        val semi = ResourcesCompat.getFont(context, R.font.plex_thai_semibold) ?: Typeface.DEFAULT_BOLD
-        val bold = ResourcesCompat.getFont(context, R.font.plex_thai_bold) ?: Typeface.DEFAULT_BOLD
-        val mono = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        val sans = ResourcesCompat.getFont(context, R.font.klang_regular) ?: Typeface.DEFAULT
+        val semi = ResourcesCompat.getFont(context, R.font.klang_semibold) ?: Typeface.DEFAULT_BOLD
+        val bold = ResourcesCompat.getFont(context, R.font.klang_bold) ?: Typeface.DEFAULT_BOLD
+        val mono = semi
         val p = Paint(Paint.ANTI_ALIAS_FLAG)
 
         // desk
@@ -101,7 +101,7 @@ object ShareCard {
         val tw = (glass.width() - lcdPad * 2).toInt()
         val isThai = { s: String -> s.any { it in '฀'..'๿' } }
         val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            typeface = if (isThai(info.title)) semi else Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+            typeface = semi
             textSize = 54f; color = skin.seg.toArgb()
         }
         val status = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = mono; textSize = 28f; color = skin.lcdDim.toArgb() }
@@ -111,7 +111,7 @@ object ShareCard {
 
         val titleLayout = layout(info.title.ifBlank { "untitled" }, titlePaint, tw, 3)
         val artistPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            typeface = if (isThai(info.artist)) sans else mono; textSize = 36f; color = skin.lcdDim.toArgb()
+            typeface = sans; textSize = 36f; color = skin.lcdDim.toArgb()
         }
         val artistLayout = if (info.artist.isNotBlank()) layout(info.artist, artistPaint, tw, 2) else null
         val textH = titleLayout.height + (artistLayout?.height?.plus(16) ?: 0)

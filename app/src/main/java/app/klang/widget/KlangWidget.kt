@@ -132,11 +132,11 @@ class KlangWidget : AppWidgetProvider() {
         }
 
         private class Fonts(context: Context) {
-            val regular: Typeface = ResourcesCompat.getFont(context, R.font.plex_thai_regular) ?: Typeface.DEFAULT
-            val medium: Typeface = ResourcesCompat.getFont(context, R.font.plex_thai_medium) ?: Typeface.DEFAULT
-            val semi: Typeface = ResourcesCompat.getFont(context, R.font.plex_thai_semibold) ?: Typeface.DEFAULT_BOLD
-            val bold: Typeface = ResourcesCompat.getFont(context, R.font.plex_thai_bold) ?: Typeface.DEFAULT_BOLD
-            val mono: Typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+            val regular: Typeface = ResourcesCompat.getFont(context, R.font.klang_regular) ?: Typeface.DEFAULT
+            val medium: Typeface = ResourcesCompat.getFont(context, R.font.klang_medium) ?: Typeface.DEFAULT
+            val semi: Typeface = ResourcesCompat.getFont(context, R.font.klang_semibold) ?: Typeface.DEFAULT_BOLD
+            val bold: Typeface = ResourcesCompat.getFont(context, R.font.klang_bold) ?: Typeface.DEFAULT_BOLD
+            val mono: Typeface get() = semi
         }
 
         private fun sp(px: (Float) -> Float, v: Float) = px(v)   // widget text does not follow the font-size setting, like the app
@@ -182,10 +182,10 @@ class KlangWidget : AppWidgetProvider() {
             c.translate(0f, top)
             val thai = { s: String -> s.any { it in '฀'..'๿' } }
             val tp = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-                typeface = if (thai(title)) f.semi else f.mono; textSize = sp(px, 13.5f); color = pal.seg
+                typeface = f.semi; textSize = sp(px, 13.5f); color = pal.seg
             }
             val ap = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-                typeface = if (thai(artist)) f.regular else Typeface.MONOSPACE; textSize = sp(px, 11f); color = pal.dim
+                typeface = f.regular; textSize = sp(px, 11f); color = pal.dim
             }
             // Lines are placed by hand: Plex Thai reports very tall line boxes (1.65 em), which wastes the small LCD.
             // Title: two lines if there is room, else one; shrink a little before dropping the artist.
