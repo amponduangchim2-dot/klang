@@ -149,7 +149,7 @@ fun SearchScreen(s: SearchUi, skipNonMusic: Boolean, a: SearchActions, startTab:
                     when {
                         s.error != null && s.results.isEmpty() -> Text(s.error, style = K.lcdText, modifier = Modifier.padding(12.dp))
                         s.results.isEmpty() && !s.loading -> Text(
-                            "Type a song or an artist and tap search.\nPaste a YouTube link to add it, a playlist link to import it, or a channel link to bookmark it.",
+                            "Type a song or an artist and tap search.\nPaste a YouTube link to add it, a playlist or Mix link to import it (a Mix is also saved to the library), or a channel link to bookmark it.",
                             style = K.lcd("", K.lcdText.copy(fontSize = 12.sp)), modifier = Modifier.padding(12.dp)
                         )
                         else -> LazyColumn(Modifier.fillMaxSize()) {

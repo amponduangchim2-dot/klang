@@ -1059,6 +1059,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun openYouTubeLink(url: String, play: Boolean) {
         when {
+            YouTube.isMixLink(url) -> importYouTubeMix(url)
             YouTube.isVideoLink(url) && !(YouTube.isPlaylistLink(url) && url.contains("/playlist")) -> {
                 viewModelScope.launch {
                     _search.value = _search.value.copy(loading = true, error = null)
@@ -1072,6 +1073,30 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             YouTube.isPlaylistLink(url) -> importYouTubePlaylist(url)
             YouTube.isChannelLink(url) -> addBookmark(url)
             else -> _message.value = "Klang Audio doesn't understand that link."
+        }
+    }
+
+    /** A YouTube Mix comes in as a list of its own: added to the playlist and saved to the library. */
+    private fun importYouTubeMix(url: String) {
+        _message.value = "Importing Mix…"
+        _search.value = _search.value.copy(loading = true, error = null)
+        viewModelScope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { YouTube.importMix(url) } }
+            _search.value = _search.value.copy(loading = false)
+            r.onSuccess { (name, items) ->
+                val songs = items.map { ytSong(it) }
+                appendSongs(songs, playNow = controller?.isPlaying != true)
+                // keep it as an album in the library
+                var n = name.take(60).trim().ifEmpty { "YouTube Mix" }
+                if (savedLists.exists(n)) {
+                    var k = 2
+                    while (savedLists.exists("$n $k")) k++
+                    n = "$n $k"
+                }
+                savedLists.save(n, songs)
+                _savedNames.value = savedLists.names()
+                _message.value = "Added ${songs.size} songs from \"$n\" and saved it to the library"
+            }.onFailure { _message.value = it.message ?: "Could not load that Mix" }
         }
     }
 

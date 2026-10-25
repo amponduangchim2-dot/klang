@@ -115,6 +115,51 @@ object YouTube {
 
     fun isVideoLink(url: String) = videoId(url) != null
     fun isPlaylistLink(url: String) = url.contains("list=") && (url.contains("youtube.com") || url.contains("youtu.be"))
+    /** The list id of a link (`list=…`), if any. */
+    fun listId(url: String): String? = Regex("""[?&]list=([A-Za-z0-9_-]+)""").find(url)?.groupValues?.get(1)
+
+    /** YouTube Mix / radio links: their list id starts with "RD" (RDxxxx, RDAMVM…, RDEM…). */
+    fun isMixLink(url: String): Boolean = isYouTube(url) && listId(url)?.startsWith("RD") == true
+
+    /** A Mix needs a starting video. Rebuilds the link as watch?v=…&list=RD… when the video is missing. */
+    fun mixUrl(url: String): String? {
+        val list = listId(url) ?: return null
+        val v = videoId(url) ?: list.removePrefix("RDAMVM").removePrefix("RD").takeIf { it.length == 11 } ?: return null
+        return "https://www.youtube.com/watch?v=$v&list=$list"
+    }
+
+    /**
+     * Loads a YouTube Mix. Mixes never end and repeat songs across pages, so this keeps the first
+     * [maxItems] different videos and stops when a page brings nothing new. Returns name and songs.
+     */
+    fun importMix(url: String, maxItems: Int = 100): Pair<String, List<YtItem>> {
+        init()
+        val u = mixUrl(url) ?: throw TrackUnavailable("This Mix link has no starting video")
+        return guard {
+            val info = PlaylistInfo.getInfo(service, u)
+            val seen = LinkedHashMap<String, YtItem>()
+            fun take(list: List<YtItem>): Int {
+                var added = 0
+                for (it in list) {
+                    val id = videoId(it.url) ?: continue
+                    if (id !in seen && seen.size < maxItems) { seen[id] = it; added++ }
+                }
+                return added
+            }
+            take(items(info.relatedItems))
+            var next: Page? = info.nextPage
+            var pages = 0
+            while (next != null && seen.size < maxItems && pages < 12) {
+                val page = PlaylistInfo.getMoreItems(service, u, next)
+                if (take(items(page.items)) == 0) break
+                next = if (page.hasNextPage()) page.nextPage else null
+                pages++
+            }
+            if (seen.isEmpty()) throw TrackUnavailable("This Mix is empty or needs a YouTube sign-in")
+            info.name.ifBlank { "YouTube Mix" } to seen.values.toList()
+        }
+    }
+
     fun isChannelLink(url: String) = Regex("""youtube\.com/(@|channel/|c/|user/)""").containsMatchIn(url)
     fun isYouTube(url: String) = url.contains("youtube.com") || url.contains("youtu.be")
 
