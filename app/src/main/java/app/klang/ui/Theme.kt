@@ -27,6 +27,8 @@ data class Skin(
     val keyOn: Color, val keyOnLo: Color, val keyOnLip: Color, val keyOnInk: Color,
     val tickMajor: Color,
     val wood: Color, val wood2: Color,
+    /** Thin dark lines between the modules, like the gaps between OP-1 keys. */
+    val seam: Color = Color(0xFF2E2D2A),
 )
 
 object Skins {
@@ -47,7 +49,7 @@ object Skins {
 
     /** Black anodised version with an amber display. */
     val graphite = studio.copy(
-        id = "graphite", label = "graphite", note = "black, amber display", dark = true,
+        id = "graphite", label = "graphite", note = "black, amber display", dark = true, seam = Color(0xFF070707),
         desk = Color(0xFF121211), shell = Color(0xFF1C1C1B), tile = Color(0xFF272725), tile2 = Color(0xFF30302D), line = Color(0xFF3B3B38),
         ink = Color(0xFFECEAE4), ink2 = Color(0xFFADAAA2), ink3 = Color(0xFF6F6D67), hole = Color(0xFF0A0A09),
         sage = Color(0xFF6E756F), sageLight = Color(0xFF8C938D), sageDark = Color(0xFF525853),
@@ -60,7 +62,7 @@ object Skins {
 
     /** Grey-green housing, like the sage push buttons. */
     val sage = studio.copy(
-        id = "sage", label = "sage", note = "grey-green housing", dark = false,
+        id = "sage", label = "sage", note = "grey-green housing", dark = false, seam = Color(0xFF29302A),
         desk = Color(0xFFC8CDC5), shell = Color(0xFFE3E7E1), tile = Color(0xFFD3D9D1), tile2 = Color(0xFFC8CFC6), line = Color(0xFFB5BDB2),
         ink = Color(0xFF1E231F), ink2 = Color(0xFF4F5750), ink3 = Color(0xFF89928A), hole = Color(0xFF262B27),
         sage = Color(0xFF9EA89F), sageLight = Color(0xFFBEC6BF), sageDark = Color(0xFF808A81),
@@ -72,7 +74,7 @@ object Skins {
 
     /** Cream with walnut cheeks and a warm backlit display. */
     val walnut = studio.copy(
-        id = "walnut", label = "walnut", note = "cream and walnut, warm display", dark = false,
+        id = "walnut", label = "walnut", note = "cream, warm display", dark = false, seam = Color(0xFF3A3129),
         desk = Color(0xFFDAD0BE), shell = Color(0xFFF4EEE3), tile = Color(0xFFE8DFCE), tile2 = Color(0xFFDED3BF), line = Color(0xFFCBBDA3),
         ink = Color(0xFF29231C), ink2 = Color(0xFF615646), ink3 = Color(0xFFA19581), hole = Color(0xFF2E2720),
         lcd = Color(0xFFDCCFAD), lcd2 = Color(0xFFCFC09C), seg = Color(0xFF2A231B), ghost = Color(0xFFC4B690), lcdDim = Color(0xFF6B5D43),
@@ -125,6 +127,7 @@ object K {
     val tickMajor get() = skin.tickMajor
     val wood get() = skin.wood
     val wood2 get() = skin.wood2
+    val seam get() = skin.seam
 
     /** IBM Plex Sans Thai covers both Thai and Latin, so it is the UI face. */
     val sans = FontFamily(

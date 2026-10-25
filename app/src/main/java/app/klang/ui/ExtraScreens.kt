@@ -87,15 +87,12 @@ private fun SkinPreview(s: Skin, modifier: Modifier) {
         drawRect(s.desk)
         // device body
         drawRoundRect(s.shell, Offset(5 * u, 5 * u), Size(w - 10 * u, h - 10 * u), CornerRadius(6 * u))
-        // wood cheeks
-        drawRect(s.wood, Offset(5 * u, 12 * u), Size(3 * u, 30 * u))
-        drawRect(s.wood, Offset(w - 8 * u, 12 * u), Size(3 * u, 30 * u))
         // grille
         val gx = 12 * u; val gy = 11 * u; val gs = 32 * u
         drawRoundRect(s.tile, Offset(gx, gy), Size(gs, gs), CornerRadius(4 * u))
-        for (i in 0 until 6) {
-            val yy = gy + 5 * u + i * 4.4f * u
-            drawRoundRect(s.hole, Offset(gx + 5 * u, yy), Size(gs - 10 * u, 1.6f * u), CornerRadius(u))
+        for (i in 0 until 7) for (j in 0 until 7) {
+            if ((i == 0 || i == 6) && (j == 0 || j == 6)) continue
+            drawCircle(s.hole, 0.9f * u, Offset(gx + 5 * u + j * 3.7f * u, gy + 5 * u + i * 3.7f * u))
         }
         // LCD
         val lx = gx + gs + 5 * u

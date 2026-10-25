@@ -49,7 +49,10 @@ import app.klang.ui.components.NameDialog
 import app.klang.ui.components.PianoRow
 import app.klang.ui.components.TextKey
 import app.klang.ui.components.Tile
-import app.klang.ui.components.WoodCheek
+import app.klang.ui.components.Cell
+import app.klang.ui.components.OpGlyphKey
+import app.klang.ui.components.Panel
+import app.klang.ui.components.PanelRow
 
 class PlaylistActions(
     val back: () -> Unit,
@@ -242,25 +245,22 @@ fun PlaylistScreen(
         }
 
         // ---- mini player
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .height(IntrinsicSize.Min)
-                .clip(RoundedCornerShape(14.dp))
-                .background(K.shell)
-                .border(1.dp, K.line, RoundedCornerShape(14.dp))
-        ) {
-            WoodCheek()
-            Row(Modifier.weight(1f).padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                GlyphKey(Glyph.Prev, a.previous, Modifier.size(42.dp), description = "Previous")
-                LcdBox(Modifier.weight(1f), padding = 6.dp) {
-                    val t = if (ui.hasMedia) (if (ui.artist.isNotBlank()) "${ui.artist} – ${ui.title}" else ui.title) else "nothing playing"
-                    Text(t, style = K.lcd(t, K.lcdText.copy(fontSize = 12.sp)), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("${formatTime(ui.positionMs)} / ${formatTime(ui.durationMs)}", style = K.lcdSmall)
+        Panel(Modifier.fillMaxWidth()) {
+            PanelRow(height = 66.dp) {
+                Cell(Modifier.width(66.dp).fillMaxHeight(), padding = 0.dp) {
+                    OpGlyphKey(Glyph.Prev, a.previous, Modifier.fillMaxSize(), description = "Previous")
                 }
-                GlyphKey(if (ui.isPlaying) Glyph.Pause else Glyph.Play, a.togglePlay, Modifier.size(width = 46.dp, height = 52.dp), orange = true, description = "Play or pause")
+                Cell(Modifier.weight(1f).fillMaxHeight(), padding = 6.dp) {
+                    LcdBox(Modifier.fillMaxSize(), padding = 6.dp) {
+                        val t = if (ui.hasMedia) (if (ui.artist.isNotBlank()) "${ui.artist} – ${ui.title}" else ui.title) else "nothing playing"
+                        Text(t, style = K.lcd(t, K.lcdText.copy(fontSize = 12.sp)), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("${formatTime(ui.positionMs)} / ${formatTime(ui.durationMs)}", style = K.lcdSmall)
+                    }
+                }
+                Cell(Modifier.width(66.dp).fillMaxHeight(), padding = 0.dp) {
+                    OpGlyphKey(if (ui.isPlaying) Glyph.Pause else Glyph.Play, a.togglePlay, Modifier.fillMaxSize(), description = "Play or pause", accent = true)
+                }
             }
-            WoodCheek()
         }
     }
 

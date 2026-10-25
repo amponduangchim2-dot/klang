@@ -1,0 +1,4 @@
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+<item android:state_pressed="true" android:drawable="@drawable/w_cap_next_light_p"/>
+<item android:drawable="@drawable/w_cap_next_light_n"/>
+</selector>

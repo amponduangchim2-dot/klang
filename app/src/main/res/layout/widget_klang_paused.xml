@@ -4,53 +4,42 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/w_bg_studio"
-    android:orientation="vertical"
-    android:paddingStart="12dp"
-    android:paddingTop="9dp"
-    android:paddingEnd="12dp"
-    android:paddingBottom="11dp">
+    android:orientation="horizontal"
+    android:padding="2dp">
 
-    <ImageView
-        android:id="@+id/w_head"
-        android:layout_width="match_parent"
-        android:layout_height="18dp"
-        android:scaleType="fitStart"
-        android:contentDescription="Klang turntable" />
+    <FrameLayout
+        android:id="@+id/w_deck"
+        android:layout_width="116dp"
+        android:layout_height="match_parent"
+        android:background="@drawable/w_cell_studio_tl">
+            <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:importantForAccessibility="no" android:padding="5dp" android:src="@drawable/w_disc_r00"/>
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:importantForAccessibility="no" android:padding="5dp" android:src="@drawable/w_disc_light"/>
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:importantForAccessibility="no" android:src="@drawable/w_arm_rest"/>
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:importantForAccessibility="no" android:src="@drawable/w_arm_off"/>
+    </FrameLayout>
 
     <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_marginTop="6dp"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_marginStart="2dp"
         android:layout_weight="1"
-        android:orientation="horizontal">
+        android:orientation="vertical">
 
         <FrameLayout
-            android:id="@+id/w_deck"
-            android:layout_width="84dp"
-            android:layout_height="84dp"
-            android:background="@drawable/w_tile_studio">
-            <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:importantForAccessibility="no" android:padding="4dp" android:src="@drawable/w_disc_r00"/>
-            <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:importantForAccessibility="no" android:padding="4dp" android:src="@drawable/w_disc_light"/>
-            <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:importantForAccessibility="no" android:src="@drawable/w_arm_rest"/>
-            <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:importantForAccessibility="no" android:src="@drawable/w_arm_off"/>
-        </FrameLayout>
-
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_marginStart="8dp"
+            android:id="@+id/w_lcdcell"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
             android:layout_weight="1"
-            android:orientation="vertical">
-
+            android:background="@drawable/w_cell_studio"
+            android:padding="5dp">
             <FrameLayout
                 android:id="@+id/w_info"
                 android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1"
+                android:layout_height="match_parent"
                 android:background="@drawable/w_lcd_studio"
-                android:paddingStart="14dp"
+                android:paddingStart="10dp"
                 android:paddingTop="5dp"
-                android:paddingEnd="12dp"
+                android:paddingEnd="8dp"
                 android:paddingBottom="5dp">
                 <ImageView
                     android:id="@+id/w_text"
@@ -58,24 +47,20 @@
                     android:layout_height="match_parent"
                     android:scaleType="fitStart" />
             </FrameLayout>
+        </FrameLayout>
 
-            <LinearLayout
-                android:id="@+id/w_track"
-                android:layout_width="match_parent"
-                android:layout_height="36dp"
-                android:layout_marginTop="5dp"
-                android:background="@drawable/w_track_studio"
-                android:orientation="horizontal"
-                android:padding="3dp">
-                <ImageView android:id="@+id/w_prev" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
-                    android:background="@drawable/w_key_studio" android:contentDescription="Previous" android:paddingBottom="2dp" android:scaleType="center" android:src="@drawable/w_ic_prev" />
-                <ImageView android:id="@+id/w_play" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1.4"
-                    android:layout_marginStart="3dp" android:layout_marginEnd="3dp"
-                    android:background="@drawable/w_key_orange" android:contentDescription="Play" android:paddingBottom="2dp" android:scaleType="center"
-                    android:src="@drawable/w_ic_play_white" />
-                <ImageView android:id="@+id/w_next" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
-                    android:background="@drawable/w_key_studio" android:contentDescription="Next" android:paddingBottom="2dp" android:scaleType="center" android:src="@drawable/w_ic_next" />
-            </LinearLayout>
+        <LinearLayout
+            android:id="@+id/w_keys"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="2dp"
+            android:orientation="horizontal">
+                <ImageView android:id="@+id/w_prev" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" 
+                    android:background="@drawable/w_cell_studio" android:contentDescription="Previous" android:scaleType="center" android:src="@drawable/w_cap_prev_light" />
+                <ImageView android:id="@+id/w_play" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_marginStart="2dp" android:layout_marginEnd="2dp"
+                    android:background="@drawable/w_cell_studio" android:contentDescription="Play" android:scaleType="center" android:src="@drawable/w_cap_play_light" />
+                <ImageView android:id="@+id/w_next" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" 
+                    android:background="@drawable/w_cell_studio" android:contentDescription="Next" android:scaleType="center" android:src="@drawable/w_cap_next_light" />
         </LinearLayout>
     </LinearLayout>
 </LinearLayout>

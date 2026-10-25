@@ -1,6 +1,6 @@
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-<item><shape><corners android:radius="14dp"/><solid android:color="#B5BDB2"/></shape></item>
-<item android:left="1dp" android:top="1dp" android:right="1dp" android:bottom="1dp"><shape><corners android:radius="13dp"/><solid android:color="#E3E7E1"/></shape></item>
-<item android:left="4dp" android:top="4dp" android:right="4dp" android:bottom="4dp"><shape><corners android:radius="10dp"/><gradient android:angle="270" android:startColor="#C6CDBC" android:endColor="#B9C1AE"/></shape></item>
-<item android:left="4dp" android:top="4dp" android:right="4dp" android:height="9dp" android:gravity="top|fill_horizontal"><shape><corners android:topLeftRadius="10dp" android:topRightRadius="10dp"/><gradient android:angle="270" android:startColor="#29000000" android:endColor="#00000000"/></shape></item>
+<item><shape><corners android:radius="8dp"/><solid android:color="#B5BDB2"/></shape></item>
+<item android:left="1dp" android:top="1dp" android:right="1dp" android:bottom="1dp"><shape><corners android:radius="7dp"/><solid android:color="#E3E7E1"/></shape></item>
+<item android:left="3dp" android:top="3dp" android:right="3dp" android:bottom="3dp"><shape><corners android:radius="5dp"/><gradient android:angle="270" android:startColor="#C6CDBC" android:endColor="#B9C1AE"/></shape></item>
+<item android:left="3dp" android:top="3dp" android:right="3dp" android:height="7dp" android:gravity="top|fill_horizontal"><shape><corners android:topLeftRadius="5dp" android:topRightRadius="5dp"/><gradient android:angle="270" android:startColor="#29000000" android:endColor="#00000000"/></shape></item>
 </layer-list>

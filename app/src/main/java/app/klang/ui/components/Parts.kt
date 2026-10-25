@@ -126,6 +126,117 @@ fun WoodCheek(modifier: Modifier = Modifier) {
     }
 }
 
+// ------------------------------------------------------------------ OP-1 style panel
+
+/** Width of the dark lines between modules. */
+val Seam = 2.dp
+
+/** A face plate split into modules by thin dark seams (like the OP-1). Put rows of [Cell]s inside. */
+@Composable
+fun Panel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(K.seam)
+            .padding(Seam),
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Seam),
+        content = content
+    )
+}
+
+/**
+ * A row of modules inside a [Panel]. With [height] the row is that tall; without it the
+ * row is as tall as its tallest module (do not use that for rows holding [OpKey]s).
+ */
+@Composable
+fun PanelRow(modifier: Modifier = Modifier, height: Dp? = null, content: @Composable RowScope.() -> Unit) {
+    Row(
+        modifier.fillMaxWidth().then(if (height != null) Modifier.height(height) else Modifier.height(androidx.compose.foundation.layout.IntrinsicSize.Min)),
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Seam),
+        content = content
+    )
+}
+
+/** One module of a [Panel]. */
+@Composable
+fun Cell(
+    modifier: Modifier = Modifier,
+    padding: Dp = 10.dp,
+    color: Color = K.tile,
+    onClick: (() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val shape = RoundedCornerShape(9.dp)
+    var m = modifier.clip(shape).background(color, shape)
+    if (onClick != null) m = m.clickable(onClick = onClick)
+    Column(m.padding(padding), content = content)
+}
+
+/**
+ * OP-1 style key: a round cap standing in a shallow well, filling the cell it sits in.
+ * The cap sinks a little while pressed.
+ */
+@Composable
+fun OpKey(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    description: String,
+    capScale: Float = 0.66f,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    val src = remember { MutableInteractionSource() }
+    val pressed by src.collectIsPressedAsState()
+    androidx.compose.foundation.layout.BoxWithConstraints(
+        modifier
+            .semantics { contentDescription = description }
+            .clickable(interactionSource = src, indication = null, role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        val d = (minOf(maxWidth, maxHeight) * capScale).coerceAtMost(72.dp)
+        val dark = K.skin.dark
+        Canvas(Modifier.size(d * 1.22f)) {
+            val c = center
+            val r = d.toPx() / 2f
+            // well
+            drawCircle(Brush.verticalGradient(listOf(Color.Black.copy(alpha = if (dark) 0.35f else 0.10f), Color.White.copy(alpha = if (dark) 0.04f else 0.5f))), r * 1.16f, c)
+            // soft shadow
+            val drop = if (pressed) 0.6.dp.toPx() else 2.2.dp.toPx()
+            for (i in 3 downTo 1) drawCircle(Color.Black.copy(alpha = (if (pressed) 0.05f else 0.07f) * i / 3f), r + i * 1.2.dp.toPx(), c + Offset(0f, drop + i * 0.6.dp.toPx()))
+            val cc = c + Offset(0f, if (pressed) 1.dp.toPx() else 0f)
+            drawCircle(K.keyLip, r, cc + Offset(0f, 1.2.dp.toPx()))
+            drawCircle(
+                Brush.radialGradient(listOf(K.keyHi, K.keyLo), center = cc + Offset(-r * 0.2f, -r * 0.45f), radius = r * 1.5f),
+                r, cc
+            )
+            drawCircle(Color.White.copy(alpha = if (dark) 0.06f else 0.7f), r - 0.6.dp.toPx(), cc, style = Stroke(0.8.dp.toPx()))
+        }
+        Box(Modifier.offset(y = if (pressed) 1.dp else 0.dp), contentAlignment = Alignment.Center, content = content)
+    }
+}
+
+/** [OpKey] with a glyph. [accent] colours the glyph orange, like the record dot on the OP-1. */
+@Composable
+fun OpGlyphKey(glyph: Glyph, onClick: () -> Unit, modifier: Modifier = Modifier, description: String, accent: Boolean = false, iconSize: Dp = 18.dp, capScale: Float = 0.66f) {
+    OpKey(onClick, modifier, description, capScale) { GlyphIcon(glyph, if (accent) K.orange else K.ink, iconSize) }
+}
+
+/** Small round OP-1 button with a label above it and an orange dot when on. */
+@Composable
+fun OpToggle(on: Boolean, onClick: () -> Unit, label: String, modifier: Modifier = Modifier) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, style = K.label.copy(fontSize = 10.5.sp), maxLines = 1)
+        Spacer(Modifier.height(4.dp))
+        OpKey(onClick, Modifier.size(44.dp), "$label ${if (on) "on" else "off"}", capScale = 0.78f) {
+            Canvas(Modifier.size(9.dp)) {
+                if (on) {
+                    drawCircle(K.orange.copy(alpha = 0.22f), size.minDimension / 2f)
+                    drawCircle(K.orange, size.minDimension / 2f * 0.7f)
+                } else drawCircle(K.ink3, size.minDimension / 2f * 0.55f)
+            }
+        }
+    }
+}
+
 // ------------------------------------------------------------------ keys
 
 /** Keycap: light face, a lip underneath and travel when pressed. */
@@ -251,6 +362,8 @@ fun Knob(
     ticks: Int = 30,
     majorEvery: Int = 5,
     description: String,
+    /** OP-1 style coloured cap in the middle of a white knob (instead of the orange ring). */
+    cap: Color? = null,
 ) {
     val current by rememberUpdatedState(value)
     val change by rememberUpdatedState(onChange)
@@ -285,7 +398,10 @@ fun Knob(
         if (style == KnobStyle.White) {
             drawCircle(Color(0xFF3A3A37), body + 1.2.dp.toPx(), c)
             drawCircle(Brush.radialGradient(listOf(Color.White, Color(0xFFEBE9E4)), center = c + Offset(0f, -body * 0.4f), radius = body * 1.4f), body, c)
-            drawCircle(K.orange, body * 0.28f, c, style = Stroke(2.dp.toPx()))
+            if (cap != null) {
+                drawCircle(Color.Black.copy(alpha = 0.18f), body * 0.46f, c + Offset(0f, body * 0.05f))
+                drawCircle(Brush.radialGradient(listOf(cap.copy(alpha = 0.85f), cap), center = c + Offset(-body * 0.1f, -body * 0.15f), radius = body * 0.5f), body * 0.42f, c)
+            } else drawCircle(K.orange, body * 0.28f, c, style = Stroke(2.dp.toPx()))
         } else {
             drawCircle(Brush.radialGradient(listOf(Color(0xFFD3D8D3), K.sage, K.sageDark), center = c + Offset(-body * 0.25f, -body * 0.35f), radius = body * 1.5f), body, c)
         }

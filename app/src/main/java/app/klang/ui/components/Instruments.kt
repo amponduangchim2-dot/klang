@@ -42,8 +42,8 @@ import kotlin.math.sqrt
 enum class VisMode(val label: String) { Spectrum("spectrum"), Oscilloscope("oscilloscope"), Off("off") }
 
 /**
- * Round speaker grille with horizontal slots split down the middle (after the RT 20 radio).
- * The slots light up orange from the centre outward with the music.
+ * Speaker grille of round holes (after the OP-1). It doubles as the visualizer:
+ * holes light up orange with the music (spectrum bars or the waveform).
  */
 @Composable
 fun GrilleVisualizer(mode: VisMode, playing: Boolean, onTap: () -> Unit, modifier: Modifier = Modifier) {
@@ -53,52 +53,51 @@ fun GrilleVisualizer(mode: VisMode, playing: Boolean, onTap: () -> Unit, modifie
     val isPlaying by rememberUpdatedState(playing)
     Canvas(
         modifier
-            .clip(RoundedCornerShape(50))
-            .semantics { contentDescription = "Visualizer: ${mode.label}. Tap to change." }
+            .semantics { contentDescription = "Speaker and visualizer: ${mode.label}. Tap to change." }
             .clickable(onClick = onTap)
     ) {
         frame // redraw every frame
-        val rows = AudioEngine.METER_BANDS
-        val w = size.minDimension
-        val r = w / 2f * 0.97f
-        val c = center
-        val slotH = w / (rows * 2f + 1f)
-        val gap = w * 0.035f
+        // OP-1 style speaker: a grid of round holes in a rounded square, the corners left solid
+        val pitch = 6.4.dp.toPx()
+        val hole = 1.55.dp.toPx()
+        val cols = ((size.width - hole * 2) / pitch).toInt().coerceAtLeast(3)
+        val rows = ((size.height - hole * 2) / pitch).toInt().coerceAtLeast(3)
+        val x0 = (size.width - (cols - 1) * pitch) / 2f
+        val y0 = (size.height - (rows - 1) * pitch) / 2f
+        val corner = minOf(cols, rows) * 0.28f      // in holes
         val live = AudioEngine.audioIsLive() && isPlaying
-        val t = frame / 1_000_000_000.0
-        for (i in 0 until rows) {
-            val y = c.y - r + slotH * (i * 2 + 1)
-            val dy = abs(y + slotH / 2f - c.y)
-            val hw = sqrt((r * r - dy * dy).coerceAtLeast(0f)) - slotH * 0.6f
-            if (hw <= gap) continue
-            val len = hw - gap / 2f
-            val cr = CornerRadius(slotH / 2f)
-            drawRoundRect(K.hole, Offset(c.x - gap / 2f - len, y), Size(len, slotH), cr)
-            drawRoundRect(K.hole, Offset(c.x + gap / 2f, y), Size(len, slotH), cr)
-
-            // bottom row = bass
-            val band = rows - 1 - i
-            val target = if (live) AudioEngine.levels[band] else 0f
-            smooth[band] += (target - smooth[band]) * if (target > smooth[band]) 0.5f else 0.12f
-            when (mode) {
-                VisMode.Spectrum -> {
-                    val l = len * smooth[band]
-                    if (l > slotH * 0.6f) {
-                        drawRoundRect(K.orange, Offset(c.x - gap / 2f - l, y), Size(l, slotH), cr)
-                        drawRoundRect(K.orange, Offset(c.x + gap / 2f, y), Size(l, slotH), cr)
-                    }
+        val bands = AudioEngine.METER_BANDS
+        for (b in 0 until bands) {
+            val target = if (live) AudioEngine.levels[b] else 0f
+            smooth[b] += (target - smooth[b]) * if (target > smooth[b]) 0.5f else 0.12f
+        }
+        val wave = AudioEngine.wave
+        for (cx in 0 until cols) {
+            // column -> band (bass on the left), interpolated
+            val bf = cx.toFloat() * (bands - 1) / (cols - 1).coerceAtLeast(1)
+            val bi = bf.toInt().coerceIn(0, bands - 1)
+            val level = smooth[bi] + (smooth[(bi + 1).coerceAtMost(bands - 1)] - smooth[bi]) * (bf - bi)
+            val lit = (level * rows + 0.2f).toInt()
+            val wv = if (live) wave[(cx * wave.size / cols).coerceIn(0, wave.size - 1)] else 0f
+            val waveRow = ((0.5f - wv * 2.4f) * (rows - 1)).toInt().coerceIn(0, rows - 1)
+            for (ry in 0 until rows) {
+                // trim the corners into a rounded square
+                val dx = maxOf(0f, maxOf(corner - cx, cx - (cols - 1 - corner)))
+                val dy = maxOf(0f, maxOf(corner - ry, ry - (rows - 1 - corner)))
+                if (dx * dx + dy * dy > corner * corner + 0.3f) continue
+                val on = when (mode) {
+                    VisMode.Spectrum -> live && rows - 1 - ry < lit
+                    VisMode.Oscilloscope -> live && ry == waveRow
+                    VisMode.Off -> false
                 }
-                VisMode.Oscilloscope -> {
-                    val wave = AudioEngine.wave
-                    val v = if (live) wave[(i * wave.size / rows).coerceIn(0, wave.size - 1)] else 0f
-                    val pos = (0.5f + v * 2.2f).coerceIn(0f, 1f)
-                    val dot = slotH
-                    if (live) {
-                        drawRoundRect(K.orange, Offset(c.x - gap / 2f - len * pos - dot / 2f, y), Size(dot, slotH), cr)
-                        drawRoundRect(K.orange, Offset(c.x + gap / 2f + len * pos - dot / 2f, y), Size(dot, slotH), cr)
-                    }
+                val p = Offset(x0 + cx * pitch, y0 + ry * pitch)
+                if (on) {
+                    drawCircle(K.orange.copy(alpha = 0.25f), hole * 1.7f, p)
+                    drawCircle(K.orange, hole * 1.1f, p)
+                } else {
+                    drawCircle(Color.White.copy(alpha = if (K.skin.dark) 0.05f else 0.55f), hole, p + Offset(0f, 0.7f))
+                    drawCircle(K.hole, hole, p)
                 }
-                VisMode.Off -> Unit
             }
         }
     }

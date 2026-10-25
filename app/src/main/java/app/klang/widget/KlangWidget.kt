@@ -82,46 +82,43 @@ class KlangWidget : AppWidgetProvider() {
             // ---- real size of this widget (portrait: min width, max height)
             val wDp = options?.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)?.takeIf { it > 0 } ?: 300
             val hDp = options?.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT)?.takeIf { it > 0 } ?: 130
-            val showHeader = hDp >= 116                              // very short widgets drop the header line
-            val content = hDp - 9 - 11 - 6 - (if (showHeader) 18 else 0)
-            val deck = content.coerceIn(56, 132)
-            val keys = if (content < 96) 32 else 36
-            val lcdH = (content - 5 - keys).coerceAtLeast(26)
-            val rightW = (wDp - 24 - deck - 8).coerceAtLeast(90)
+            val inner = hDp - 4                                       // 2 dp seam all round
+            val deck = minOf(inner, (wDp * 0.42f).toInt()).coerceIn(56, 150)
+            val keys = (inner * 0.38f).toInt().coerceIn(38, 54)
+            val lcdH = (inner - 2 - keys).coerceAtLeast(30)
+            val rightW = (wDp - 4 - deck - 2).coerceAtLeast(90)
 
             val v = RemoteViews(context.packageName, if (playing) R.layout.widget_klang_playing else R.layout.widget_klang_paused)
             if (Build.VERSION.SDK_INT >= 31) {
                 v.setViewLayoutWidth(R.id.w_deck, deck.toFloat(), TypedValue.COMPLEX_UNIT_DIP)
-                v.setViewLayoutHeight(R.id.w_deck, deck.toFloat(), TypedValue.COMPLEX_UNIT_DIP)
-                v.setViewLayoutHeight(R.id.w_track, keys.toFloat(), TypedValue.COMPLEX_UNIT_DIP)
+                v.setViewLayoutHeight(R.id.w_keys, keys.toFloat(), TypedValue.COMPLEX_UNIT_DIP)
             }
 
-            fun d(name: String) = context.resources.getIdentifier("w_${name}_$k", "drawable", context.packageName)
-            v.setInt(R.id.w_root, "setBackgroundResource", d("bg"))
-            v.setInt(R.id.w_deck, "setBackgroundResource", d("tile"))
-            v.setInt(R.id.w_info, "setBackgroundResource", d("lcd"))
-            v.setInt(R.id.w_track, "setBackgroundResource", d("track"))
-            v.setInt(R.id.w_prev, "setBackgroundResource", d("key"))
-            v.setInt(R.id.w_next, "setBackgroundResource", d("key"))
-            v.setImageViewResource(R.id.w_prev, if (dark) R.drawable.w_ic_prev_light else R.drawable.w_ic_prev)
-            v.setImageViewResource(R.id.w_next, if (dark) R.drawable.w_ic_next_light else R.drawable.w_ic_next)
+            fun d(name: String) = context.resources.getIdentifier("w_$name", "drawable", context.packageName)
+            v.setInt(R.id.w_root, "setBackgroundResource", d("bg_$k"))
+            v.setInt(R.id.w_deck, "setBackgroundResource", d("cell_${k}_tl"))
+            v.setInt(R.id.w_lcdcell, "setBackgroundResource", d("cell_${k}_tr"))
+            v.setInt(R.id.w_info, "setBackgroundResource", d("lcd_$k"))
+            v.setInt(R.id.w_prev, "setBackgroundResource", d("cell_$k"))
+            v.setInt(R.id.w_play, "setBackgroundResource", d("cell_$k"))
+            v.setInt(R.id.w_next, "setBackgroundResource", d("cell_${k}_br"))
+            val tone = if (dark) "dark" else "light"
+            v.setImageViewResource(R.id.w_prev, d("cap_prev_$tone"))
+            v.setImageViewResource(R.id.w_play, d(if (playing) "cap_pause_$tone" else "cap_play_$tone"))
+            v.setImageViewResource(R.id.w_next, d("cap_next_$tone"))
 
-            // ---- text, drawn in IBM Plex Sans Thai
+            // ---- text on the display, drawn in IBM Plex Sans Thai
             val (cleanArtist, cleanTitle) = if (rawTitle != null) app.klang.lyrics.LrcLib.clean(rawTitle, rawArtist) else ("" to "")
             val title = if (rawTitle == null) "Klang" else cleanTitle.ifBlank { rawTitle }
             val artist = if (rawTitle == null) "press play to start" else cleanArtist.ifBlank { rawArtist }
             val dm = context.resources.displayMetrics
             val px = { dp: Float -> dp * dm.density }
             val fonts = Fonts(context)
-
-            v.setViewVisibility(R.id.w_head, if (showHeader) android.view.View.VISIBLE else android.view.View.GONE)
-            v.setImageViewBitmap(R.id.w_head, header(fonts, pal, playing, px(wDp - 24f).toInt(), px(18f).toInt(), px))
-            v.setContentDescription(R.id.w_head, "Klang turntable, ${if (playing) "playing" else "paused"}")
-            // LCD inner area: bezel 4dp each side, padding 14 + 12 across, 5 + 5 down
-            val textW = px(rightW - 8f - 26f).toInt().coerceAtLeast(40)
-            val textH = px(lcdH - 8f - 10f).toInt().coerceAtLeast(20)
-            v.setImageViewBitmap(R.id.w_text, lcdText(fonts, pal, title, artist, textW, textH, px))
-            v.setContentDescription(R.id.w_text, "$title, $artist")
+            // display area: cell padding 5, glass bezel 3, text padding 10 + 8 across, 5 + 5 down
+            val textW = px(rightW - 10f - 6f - 18f).toInt().coerceAtLeast(40)
+            val textH = px(lcdH - 10f - 6f - 10f).toInt().coerceAtLeast(20)
+            v.setImageViewBitmap(R.id.w_text, lcdText(fonts, pal, playing, title, artist, textW, textH, px))
+            v.setContentDescription(R.id.w_text, "Klang, ${if (playing) "playing" else "paused"}: $title, $artist")
 
             v.setOnClickPendingIntent(R.id.w_prev, mediaButton(context, KeyEvent.KEYCODE_MEDIA_PREVIOUS))
             v.setOnClickPendingIntent(R.id.w_play, mediaButton(context, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
@@ -133,7 +130,6 @@ class KlangWidget : AppWidgetProvider() {
             )
             v.setOnClickPendingIntent(R.id.w_deck, open)
             v.setOnClickPendingIntent(R.id.w_info, open)
-            v.setOnClickPendingIntent(R.id.w_head, open)
             return v
         }
 
@@ -174,9 +170,18 @@ class KlangWidget : AppWidgetProvider() {
         }
 
         /** Title (two lines when there is room) and artist on the LCD, vertically centred. */
-        private fun lcdText(f: Fonts, pal: Palette, title: String, artist: String, w: Int, h: Int, px: (Float) -> Float): Bitmap {
-            val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        private fun lcdText(f: Fonts, pal: Palette, playing: Boolean, title: String, artist: String, w: Int, fullH: Int, px: (Float) -> Float): Bitmap {
+            val bmp = Bitmap.createBitmap(w, fullH, Bitmap.Config.ARGB_8888)
             val c = Canvas(bmp)
+            // status line, like the app's LCD: "▶ PLAY" ... "klang"
+            val st = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = f.mono; textSize = px(9.5f); color = pal.seg }
+            val stBase = px(9.5f)
+            c.drawText(if (playing) "▶ PLAY" else "❚❚ PAUSE", 0f, stBase, st)
+            val brand = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = f.bold; textSize = px(10.5f); color = pal.dim }
+            c.drawText("klang", w - brand.measureText("klang"), stBase, brand)
+            val top = px(13f)
+            val h = (fullH - top).toInt().coerceAtLeast(10)
+            c.translate(0f, top)
             val thai = { s: String -> s.any { it in '฀'..'๿' } }
             val tp = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
                 typeface = if (thai(title)) f.semi else f.mono; textSize = sp(px, 13.5f); color = pal.seg

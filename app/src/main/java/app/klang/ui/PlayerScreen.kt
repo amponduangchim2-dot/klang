@@ -52,7 +52,13 @@ import app.klang.ui.components.SevenSegment
 import app.klang.ui.components.Tile
 import app.klang.ui.components.TuningScale
 import app.klang.ui.components.VisMode
-import app.klang.ui.components.WoodCheek
+import app.klang.ui.components.Cell
+import app.klang.ui.components.OpGlyphKey
+import app.klang.ui.components.OpToggle
+import app.klang.ui.components.Panel
+import app.klang.ui.components.PanelRow
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 
 fun formatTime(ms: Long): String {
     val s = (ms / 1000L).coerceAtLeast(0L)
@@ -89,9 +95,8 @@ class PlayerActions(
 fun PlayerScreen(ui: PlayerUi, sleepChoice: Int, sleepLeftMs: Long, libraryCount: Int, eqBands: List<Float>, eqPreset: String?, a: PlayerActions, big: Boolean = false) {
     var vis by rememberSaveable { mutableStateOf(VisMode.Spectrum) }
     var remaining by rememberSaveable { mutableStateOf(false) }
-    val gap = 8.dp
 
-    Column(verticalArrangement = Arrangement.spacedBy(gap)) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         // ---- header
         Row(Modifier.padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("klang", style = K.wordmark)
@@ -103,39 +108,38 @@ fun PlayerScreen(ui: PlayerUi, sleepChoice: Int, sleepLeftMs: Long, libraryCount
             Lamp(ui.isPlaying)
         }
 
-        // ---- device: grille + LCD, with wood cheeks
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .height(IntrinsicSize.Min)
-                .clip(RoundedCornerShape(14.dp))
-                .background(K.shell)
-                .border(1.dp, K.line, RoundedCornerShape(14.dp))
-        ) {
-            WoodCheek()
-            Row(
-                Modifier.weight(1f).padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                GrilleVisualizer(
-                    mode = vis,
-                    playing = ui.isPlaying,
-                    onTap = { vis = VisMode.entries[(vis.ordinal + 1) % VisMode.entries.size] },
-                    modifier = Modifier.size(112.dp)
-                )
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        // One face plate on a four-column grid; every module lines up with the ones above and below.
+        Panel(Modifier.fillMaxWidth()) {
+            // ---- speaker (1 column) + display (3 columns)
+            PanelRow {
+                Cell(Modifier.weight(1f).fillMaxHeight(), padding = 6.dp) {
+                    GrilleVisualizer(
+                        mode = vis,
+                        playing = ui.isPlaying,
+                        onTap = { vis = VisMode.entries[(vis.ordinal + 1) % VisMode.entries.size] },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+                Cell(Modifier.weight(3f + 2f * SEAM_W), padding = 6.dp) {
                     LcdBox(Modifier.fillMaxWidth().clickable { remaining = !remaining }) {
-                        Text(
-                            if (ui.isPlaying) "▶ play" else if (ui.positionMs > 0) "❚❚ pause" else "■ stop",
-                            style = K.lcdSmall.copy(color = K.seg), maxLines = 1, softWrap = false
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                if (ui.isPlaying) "▶ play" else if (ui.positionMs > 0) "❚❚ pause" else "■ stop",
+                                style = K.lcdSmall.copy(color = K.seg), maxLines = 1, softWrap = false,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                if (ui.count > 0) "${(ui.index + 1).toString().padStart(2, '0')}/${ui.count.toString().padStart(2, '0')}" else "--/--",
+                                style = K.lcdSmall.copy(color = K.seg), maxLines = 1
+                            )
+                        }
                         Text(
                             listOfNotNull(
                                 ui.kbps?.let { "${it}kbps" },
                                 ui.khz?.let { "${it}kHz" },
                                 when (ui.stereo) { true -> "stereo"; false -> "mono"; null -> null },
-                            ).joinToString("  ").ifEmpty { " " },
+                                "vis ${vis.label}",
+                            ).joinToString("  "),
                             style = K.lcdSmall.copy(fontSize = 10.sp), maxLines = 1, softWrap = false,
                             overflow = TextOverflow.Clip
                         )
@@ -155,150 +159,138 @@ fun PlayerScreen(ui: PlayerUi, sleepChoice: Int, sleepLeftMs: Long, libraryCount
                             modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE)
                         )
                     }
-                    Row {
-                        Text("vis: ${vis.label}", style = K.label, modifier = Modifier.weight(1f))
-                        Text(
-                            if (ui.count > 0) "${(ui.index + 1).toString().padStart(2, '0')}/${ui.count.toString().padStart(2, '0')}" else "--/--",
-                            style = K.value
+                }
+            }
+
+            // ---- position (4 columns)
+            PanelRow {
+                Cell(Modifier.weight(1f)) {
+                    LabelRow("position", "${formatTime(ui.positionMs)} / ${formatTime(ui.durationMs)}")
+                    Spacer(Modifier.height(6.dp))
+                    Box(
+                        Modifier
+                            .background(K.line, RoundedCornerShape(10.dp))
+                            .padding(1.dp)
+                            .background(K.shell, RoundedCornerShape(9.dp))
+                            .padding(3.dp)
+                    ) {
+                        TuningScale(
+                            progress = if (ui.durationMs > 0) ui.positionMs.toFloat() / ui.durationMs else 0f,
+                            durationMs = ui.durationMs.coerceAtLeast(60_000L),
+                            trackIndex = ui.index,
+                            trackCount = ui.count.coerceAtLeast(1),
+                            onSeek = a.seek,
                         )
                     }
                 }
             }
-            WoodCheek()
-        }
 
-        // ---- position: tuning scale
-        Tile {
-            LabelRow("position", "${formatTime(ui.positionMs)} / ${formatTime(ui.durationMs)}")
-            Spacer(Modifier.height(6.dp))
-            Box(
-                Modifier
-                    .background(K.line, RoundedCornerShape(12.dp))
-                    .padding(1.dp)
-                    .background(K.shell, RoundedCornerShape(11.dp))
-                    .padding(3.dp)
-            ) {
-                TuningScale(
-                    progress = if (ui.durationMs > 0) ui.positionMs.toFloat() / ui.durationMs else 0f,
-                    durationMs = ui.durationMs.coerceAtLeast(60_000L),
-                    trackIndex = ui.index,
-                    trackCount = ui.count.coerceAtLeast(1),
-                    onSeek = a.seek,
-                )
-            }
-        }
-
-        // ---- transport: piano keys
-        Tile {
-            val ic = if (big) 28.dp else 18.dp
-            PianoRow(Modifier.fillMaxWidth().height(if (big) 92.dp else 54.dp)) {
-                GlyphKey(Glyph.Prev, a.previous, Modifier.weight(1f).fillMaxHeight(), description = "Previous", iconSize = ic)
-                if (!big) GlyphKey(Glyph.Stop, a.stop, Modifier.weight(1f).fillMaxHeight(), description = "Stop")
-                GlyphKey(
-                    if (ui.isPlaying) Glyph.Pause else Glyph.Play, a.togglePlay,
-                    Modifier.weight(if (big) 1.8f else 1.4f).fillMaxHeight(), orange = true,
-                    description = if (ui.isPlaying) "Pause" else "Play", iconSize = ic
-                )
-                GlyphKey(Glyph.Next, a.next, Modifier.weight(1f).fillMaxHeight(), description = "Next", iconSize = ic)
-                if (!big) {
-                    GlyphKey(Glyph.Pause, a.pause, Modifier.weight(1f).fillMaxHeight(), description = "Pause")
-                    GlyphKey(Glyph.Eject, { a.open(Screen.Library) }, Modifier.weight(1f).fillMaxHeight(), description = "Open music")
-                }
-            }
-        }
-
-        // ---- volume knob | push buttons + balance
-        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(gap)) {
-            Tile(Modifier.weight(1f).fillMaxHeight()) {
-                LabelRow("volume", (ui.volume * 100).toInt().toString())
-                Spacer(Modifier.height(4.dp))
-                Spacer(Modifier.weight(1f))
-                Knob(
-                    value = ui.volume,
-                    onChange = a.setVolume,
-                    modifier = Modifier.align(Alignment.CenterHorizontally).widthIn(max = 128.dp).fillMaxWidth(),
-                    description = "Volume ${(ui.volume * 100).toInt()} percent",
-                )
-                Spacer(Modifier.weight(1f))
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(gap)) {
-                Tile(Modifier.fillMaxWidth()) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        PushButton(ui.shuffle, a.toggleShuffle, "shuffle")
-                        PushButton(ui.repeat != RepeatMode.OFF, a.cycleRepeat, if (ui.repeat == RepeatMode.ONE) "repeat 1" else "repeat")
-                        PushButton(ui.eqOn, a.toggleEq, "eq")
+            // ---- transport: four OP-1 keys
+            val keyH = if (big) 104.dp else 74.dp
+            val ic = if (big) 26.dp else 18.dp
+            PanelRow(height = keyH) {
+                listOf(
+                    Triple(Glyph.Prev, a.previous, "Previous"),
+                    Triple(if (ui.isPlaying) Glyph.Pause else Glyph.Play, a.togglePlay, if (ui.isPlaying) "Pause" else "Play"),
+                    Triple(Glyph.Stop, a.stop, "Stop"),
+                    Triple(Glyph.Next, a.next, "Next"),
+                ).forEachIndexed { i, (g, f, d) ->
+                    Cell(Modifier.weight(1f).fillMaxHeight(), padding = 0.dp) {
+                        OpGlyphKey(g, f, Modifier.fillMaxSize(), description = d, accent = i == 1, iconSize = ic)
                     }
                 }
-                Tile(Modifier.fillMaxWidth().weight(1f)) {
+            }
+
+            // ---- volume | balance | shuffle · repeat · eq
+            PanelRow(height = 112.dp) {
+                Cell(Modifier.weight(1f).fillMaxHeight(), padding = 8.dp) {
+                    LabelRow("vol", (ui.volume * 100).toInt().toString())
+                    Knob(
+                        value = ui.volume,
+                        onChange = a.setVolume,
+                        modifier = Modifier.align(Alignment.CenterHorizontally).weight(1f),
+                        cap = K.orange,
+                        description = "Volume ${(ui.volume * 100).toInt()} percent",
+                    )
+                }
+                Cell(Modifier.weight(1f).fillMaxHeight(), padding = 8.dp) {
+                    val b = (ui.balance * 100).toInt()
+                    LabelRow("bal", if (b == 0) "C" else if (b < 0) "L${-b}" else "R$b")
+                    Knob(
+                        value = (ui.balance + 1f) / 2f,
+                        onChange = { a.setBalance(it * 2f - 1f) },
+                        modifier = Modifier.align(Alignment.CenterHorizontally).weight(1f),
+                        ticks = 10,
+                        cap = K.ink3,
+                        description = "Balance",
+                    )
+                }
+                Cell(Modifier.weight(2f + SEAM_W).fillMaxHeight(), padding = 8.dp) {
+                    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                        OpToggle(ui.shuffle, a.toggleShuffle, "shuffle")
+                        OpToggle(ui.repeat != RepeatMode.OFF, a.cycleRepeat, if (ui.repeat == RepeatMode.ONE) "repeat 1" else "repeat")
+                        OpToggle(ui.eqOn, a.toggleEq, "eq")
+                    }
+                }
+            }
+
+            // ---- equalizer | playlist (2 + 2 columns)
+            PanelRow {
+                Cell(Modifier.weight(1f).fillMaxHeight(), onClick = { a.open(Screen.Eq) }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("balance", style = K.label)
-                            val b = (ui.balance * 100).toInt()
-                            Text(if (b == 0) "center" else if (b < 0) "left ${-b}" else "right $b", style = K.value)
-                        }
-                        Knob(
-                            value = (ui.balance + 1f) / 2f,
-                            onChange = { a.setBalance(it * 2f - 1f) },
-                            modifier = Modifier.size(64.dp),
-                            style = KnobStyle.Sage,
-                            ticks = 10,
-                            description = "Balance",
-                        )
+                        Text("equalizer", style = K.label, modifier = Modifier.weight(1f)); Lamp(ui.eqOn)
                     }
+                    Spacer(Modifier.height(8.dp))
+                    MiniEqBars(eqBands, ui.eqOn)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        if (!ui.eqOn) "off" else (eqPreset ?: "custom"),
+                        style = K.lcd(eqPreset ?: "", K.label), maxLines = 1, overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Cell(Modifier.weight(1f).fillMaxHeight(), onClick = { a.open(Screen.Queue) }) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("playlist", style = K.label, modifier = Modifier.weight(1f)); Lamp(ui.count > 0)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Text("${ui.count}", style = K.value.copy(fontSize = 22.sp))
+                    Text("tracks · tap to edit", style = K.label)
                 }
             }
-        }
 
-        // ---- windows: equalizer + playlist
-        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(gap)) {
-            Tile(Modifier.weight(1f).fillMaxHeight(), onClick = { a.open(Screen.Eq) }) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("equalizer", style = K.label, modifier = Modifier.weight(1f)); Lamp(ui.eqOn)
+            // ---- tools: 4 x 2 square modules
+            val sleepLabel = if (sleepChoice == 0) "off" else if (sleepLeftMs > 0) formatTime(sleepLeftMs) + " left" else SLEEP_CHOICES[sleepChoice]
+            val tools = listOf(
+                ToolSpec("library", Glyph.Library, "$libraryCount songs") { a.open(Screen.Hub) },
+                ToolSpec("search", Glyph.Search, "youtube") { a.open(Screen.Search) },
+                ToolSpec("lyrics", Glyph.Lyrics, "lrclib") { a.open(Screen.Lyrics) },
+                ToolSpec("skins", Glyph.Skins, Skins.byId(K.skin.id).label) { a.open(Screen.Skins) },
+                ToolSpec("sleep", Glyph.Sleep, sleepLabel, active = sleepChoice != 0) { a.cycleSleep() },
+                ToolSpec("output", Glyph.Cast, "speaker · bt") { a.notYet("Cast") },
+                ToolSpec("share", Glyph.Share, "card") { a.open(Screen.Share) },
+                ToolSpec("options", Glyph.Options, null) { a.open(Screen.Options) },
+            )
+            tools.chunked(4).forEach { row ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    row.forEach { t -> ToolTile(t, Modifier.weight(1f)) }
                 }
-                Spacer(Modifier.height(8.dp))
-                MiniEqBars(eqBands, ui.eqOn)
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    if (!ui.eqOn) "off" else (eqPreset ?: "custom"),
-                    style = K.lcd(eqPreset ?: "", K.label), maxLines = 1, overflow = TextOverflow.Ellipsis
-                )
-            }
-            Tile(Modifier.weight(1f).fillMaxHeight(), onClick = { a.open(Screen.Queue) }) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("playlist", style = K.label, modifier = Modifier.weight(1f)); Lamp(ui.count > 0)
-                }
-                Spacer(Modifier.height(10.dp))
-                Text("${ui.count}", style = K.value.copy(fontSize = 20.sp))
-                Text("tracks · tap to edit", style = K.label)
-            }
-        }
-
-        // ---- tools
-        val sleepLabel = if (sleepChoice == 0) "off" else if (sleepLeftMs > 0) formatTime(sleepLeftMs) + " left" else SLEEP_CHOICES[sleepChoice]
-        val tools = listOf(
-            ToolSpec("library", Glyph.Library, "$libraryCount songs") { a.open(Screen.Hub) },
-            ToolSpec("search", Glyph.Search, "youtube") { a.open(Screen.Search) },
-            ToolSpec("lyrics", Glyph.Lyrics, "lrclib") { a.open(Screen.Lyrics) },
-            ToolSpec("skins", Glyph.Skins, Skins.byId(K.skin.id).label) { a.open(Screen.Skins) },
-            ToolSpec("sleep", Glyph.Sleep, sleepLabel, active = sleepChoice != 0) { a.cycleSleep() },
-            ToolSpec("output", Glyph.Cast, "speaker · bt") { a.notYet("Cast") },
-            ToolSpec("share", Glyph.Share, "card") { a.open(Screen.Share) },
-            ToolSpec("options", Glyph.Options, null) { a.open(Screen.Options) },
-        )
-        tools.chunked(4).forEach { row ->
-            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(gap)) {
-                row.forEach { t -> ToolTile(t, Modifier.weight(1f).fillMaxHeight()) }
             }
         }
         Spacer(Modifier.height(8.dp))
     }
 }
 
+/**
+ * A module that spans n columns also covers the n-1 seams between them. Seams are 2 dp
+ * against columns of roughly 80 dp, so a span gets this much extra weight per seam.
+ */
+private const val SEAM_W = 0.025f
+
 class ToolSpec(val name: String, val glyph: Glyph, val sub: String?, val active: Boolean = false, val onClick: () -> Unit)
 
 @Composable
 private fun ToolTile(t: ToolSpec, modifier: Modifier) {
-    Tile(modifier.heightIn(min = 86.dp), onClick = t.onClick) {
+    Cell(modifier.aspectRatio(1f, matchHeightConstraintsFirst = false), onClick = t.onClick) {
         OutlineIcon(t.glyph, color = if (t.active) K.orange else K.ink)
         Spacer(Modifier.weight(1f))
         Text(t.name, style = K.name, maxLines = 1)
