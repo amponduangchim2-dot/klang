@@ -430,11 +430,11 @@ fun Knob(
 
 /** Round outline icon used on tool tiles. */
 @Composable
-fun OutlineIcon(glyph: Glyph, modifier: Modifier = Modifier, color: Color = K.ink) {
+fun OutlineIcon(glyph: Glyph, modifier: Modifier = Modifier, color: Color = K.ink, size: Dp = 30.dp) {
     Box(
         modifier
-            .size(30.dp)
+            .size(size)
             .border(1.5.dp, color, CircleShape),
         contentAlignment = Alignment.Center
-    ) { GlyphIcon(glyph, color, 16.dp) }
+    ) { GlyphIcon(glyph, color, size * 0.53f) }
 }

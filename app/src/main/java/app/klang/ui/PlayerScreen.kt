@@ -284,10 +284,21 @@ class ToolSpec(val name: String, val glyph: Glyph, val sub: String?, val active:
 
 @Composable
 private fun ToolTile(t: ToolSpec, modifier: Modifier) {
+    // Klang Sans has tall line boxes; tight line heights keep both lines inside short tiles.
+    val tight = androidx.compose.ui.text.style.LineHeightStyle(
+        androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
+        androidx.compose.ui.text.style.LineHeightStyle.Trim.Both
+    )
     Cell(modifier, padding = 8.dp, onClick = t.onClick) {
-        OutlineIcon(t.glyph, color = if (t.active) K.orange else K.ink)
-        Spacer(Modifier.weight(1f))
-        Text(t.name, style = K.name, maxLines = 1)
-        if (t.sub != null) Text(t.sub, style = K.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Box(Modifier.fillMaxSize()) {
+            OutlineIcon(t.glyph, color = if (t.active) K.orange else K.ink, size = 26.dp)
+            Column(Modifier.align(Alignment.BottomStart)) {
+                Text(t.name, style = K.name.copy(fontSize = 14.sp, lineHeight = 16.sp, lineHeightStyle = tight), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (t.sub != null) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(t.sub, style = K.label.copy(fontSize = 11.sp, lineHeight = 13.sp, lineHeightStyle = tight), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
     }
 }
