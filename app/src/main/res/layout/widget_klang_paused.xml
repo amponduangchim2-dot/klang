@@ -3,98 +3,91 @@
     android:id="@+id/w_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/w_bg"
-    android:gravity="center_vertical"
-    android:orientation="horizontal"
-    android:padding="10dp">
-
-    <FrameLayout
-        android:id="@+id/w_deck"
-        android:layout_width="104dp"
-        android:layout_height="104dp"
-        android:background="@drawable/w_plinth"
-        android:padding="4dp">
-        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:src="@drawable/w_vinyl_r00" android:importantForAccessibility="no"/>
-        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:src="@drawable/w_vinyl_sheen" android:importantForAccessibility="no"/>
-        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:src="@drawable/w_arm_off" android:importantForAccessibility="no"/>
-    </FrameLayout>
+    android:background="@drawable/w_bg_studio"
+    android:orientation="vertical"
+    android:paddingStart="12dp"
+    android:paddingTop="9dp"
+    android:paddingEnd="12dp"
+    android:paddingBottom="12dp">
 
     <LinearLayout
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_marginStart="12dp"
-        android:layout_weight="1"
-        android:orientation="vertical">
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="2dp"
+        android:paddingEnd="2dp">
+        <TextView android:id="@+id/w_brand" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:fontFamily="@font/plex_thai_bold" android:text="klang" android:textColor="#232321" android:textSize="14sp" />
+        <TextView android:id="@+id/w_model" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:layout_marginStart="6dp" android:fontFamily="@font/plex_thai_medium" android:text="turntable" android:textColor="#5E5C57" android:textSize="11sp" />
+        <TextView android:id="@+id/w_label" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:fontFamily="@font/plex_thai_medium" android:text="paused" android:textColor="#5E5C57" android:textSize="11sp" />
+        <ImageView android:id="@+id/w_lamp" android:layout_width="10dp" android:layout_height="10dp" android:layout_marginStart="6dp"
+            android:src="@drawable/w_lamp_off" android:importantForAccessibility="no" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="7dp"
+        android:orientation="horizontal">
+
+        <FrameLayout
+            android:id="@+id/w_deck"
+            android:layout_width="108dp"
+            android:layout_height="108dp"
+            android:background="@drawable/w_tile_studio">
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:padding="5dp" android:src="@drawable/w_disc_r00" android:importantForAccessibility="no"/>
+            <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:padding="5dp" android:src="@drawable/w_disc_light" android:importantForAccessibility="no"/>
+            <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:src="@drawable/w_arm_rest" android:importantForAccessibility="no"/>
+            <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:src="@drawable/w_arm_off" android:importantForAccessibility="no"/>
+        </FrameLayout>
 
         <LinearLayout
-            android:id="@+id/w_info"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
+            android:layout_width="0dp"
+            android:layout_height="108dp"
+            android:layout_marginStart="8dp"
             android:layout_weight="1"
             android:orientation="vertical">
-            <TextView
-                android:id="@+id/w_label"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:fontFamily="@font/plex_thai_medium"
-                android:text="klang · paused"
-                android:textColor="#5E5C57"
-                android:textSize="11sp" />
-            <TextView
-                android:id="@+id/w_title"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:ellipsize="end"
-                android:fontFamily="@font/plex_thai_semibold"
-                android:maxLines="2"
-                android:text="Klang"
-                android:textColor="#232321"
-                android:textSize="15sp" />
-            <TextView
-                android:id="@+id/w_artist"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:ellipsize="end"
-                android:fontFamily="@font/plex_thai_regular"
-                android:maxLines="1"
-                android:text=""
-                android:textColor="#5E5C57"
-                android:textSize="12sp" />
-        </LinearLayout>
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="40dp"
-            android:orientation="horizontal">
-            <ImageView
-                android:id="@+id/w_prev"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
+            <LinearLayout
+                android:id="@+id/w_info"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
                 android:layout_weight="1"
-                android:background="@drawable/w_key"
-                android:contentDescription="Previous"
-                android:scaleType="center"
-                android:src="@drawable/w_ic_prev" />
-            <ImageView
-                android:id="@+id/w_play"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_marginStart="5dp"
-                android:layout_marginEnd="5dp"
-                android:layout_weight="1.4"
-                android:background="@drawable/w_key_orange"
-                android:contentDescription="Play"
-                android:scaleType="center"
-                android:src="@drawable/w_ic_play_white" />
-            <ImageView
-                android:id="@+id/w_next"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_weight="1"
-                android:background="@drawable/w_key"
-                android:contentDescription="Next"
-                android:scaleType="center"
-                android:src="@drawable/w_ic_next" />
+                android:background="@drawable/w_lcd_studio"
+                android:gravity="center_vertical"
+                android:orientation="vertical"
+                android:paddingStart="13dp"
+                android:paddingTop="7dp"
+                android:paddingEnd="11dp"
+                android:paddingBottom="7dp">
+                <TextView android:id="@+id/w_title" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:ellipsize="end" android:fontFamily="@font/plex_thai_semibold" android:lineSpacingMultiplier="0.9" android:maxLines="2"
+                    android:text="Klang" android:textColor="#252523" android:textSize="13.5sp" />
+                <TextView android:id="@+id/w_artist" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:ellipsize="end" android:fontFamily="@font/plex_thai_regular" android:maxLines="1"
+                    android:text="" android:textColor="#555852" android:textSize="11sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/w_track"
+                android:layout_width="match_parent"
+                android:layout_height="38dp"
+                android:layout_marginTop="6dp"
+                android:background="@drawable/w_track_studio"
+                android:orientation="horizontal"
+                android:padding="3dp">
+                <ImageView android:id="@+id/w_prev" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
+                    android:background="@drawable/w_key_studio" android:contentDescription="Previous" android:paddingBottom="2dp" android:scaleType="center" android:src="@drawable/w_ic_prev" />
+                <ImageView android:id="@+id/w_play" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1.4"
+                    android:layout_marginStart="3dp" android:layout_marginEnd="3dp"
+                    android:background="@drawable/w_key_orange" android:contentDescription="Play" android:paddingBottom="2dp" android:scaleType="center"
+                    android:src="@drawable/w_ic_play_white" />
+                <ImageView android:id="@+id/w_next" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
+                    android:background="@drawable/w_key_studio" android:contentDescription="Next" android:paddingBottom="2dp" android:scaleType="center" android:src="@drawable/w_ic_next" />
+            </LinearLayout>
         </LinearLayout>
     </LinearLayout>
 </LinearLayout>

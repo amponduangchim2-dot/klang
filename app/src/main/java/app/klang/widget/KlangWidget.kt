@@ -48,26 +48,33 @@ class KlangWidget : AppWidgetProvider() {
             val dark = skin == "graphite"
 
             val v = RemoteViews(context.packageName, if (playing) R.layout.widget_klang_playing else R.layout.widget_klang_paused)
-            v.setInt(R.id.w_root, "setBackgroundResource", when (skin) {
-                "graphite" -> R.drawable.w_bg_dark
-                "sage" -> R.drawable.w_bg_sage
-                "walnut" -> R.drawable.w_bg_walnut
-                else -> R.drawable.w_bg
-            })
-            val ink = if (dark) 0xFFECEAE4.toInt() else 0xFF232321.toInt()
-            val ink2 = if (dark) 0xFFADAAA2.toInt() else 0xFF5E5C57.toInt()
-            v.setTextViewText(R.id.w_title, title ?: "Klang")
-            v.setTextViewText(R.id.w_artist, if (title == null) "tap play to start" else artist)
-            v.setTextViewText(R.id.w_label, if (playing) "klang · playing" else "klang · paused")
-            v.setTextColor(R.id.w_title, ink)
-            v.setTextColor(R.id.w_artist, ink2)
-            v.setTextColor(R.id.w_label, ink2)
-            val key = if (dark) R.drawable.w_key_dark else R.drawable.w_key
-            v.setInt(R.id.w_prev, "setBackgroundResource", key)
-            v.setInt(R.id.w_next, "setBackgroundResource", key)
+            val k = when (skin) { "graphite", "sage", "walnut" -> skin; else -> "studio" }
+            fun d(name: String) = context.resources.getIdentifier("w_${name}_$k", "drawable", context.packageName)
+            v.setInt(R.id.w_root, "setBackgroundResource", d("bg"))
+            v.setInt(R.id.w_deck, "setBackgroundResource", d("tile"))
+            v.setInt(R.id.w_info, "setBackgroundResource", d("lcd"))
+            v.setInt(R.id.w_track, "setBackgroundResource", d("track"))
+            v.setInt(R.id.w_prev, "setBackgroundResource", d("key"))
+            v.setInt(R.id.w_next, "setBackgroundResource", d("key"))
             v.setImageViewResource(R.id.w_prev, if (dark) R.drawable.w_ic_prev_light else R.drawable.w_ic_prev)
             v.setImageViewResource(R.id.w_next, if (dark) R.drawable.w_ic_next_light else R.drawable.w_ic_next)
 
+            // colours of the housing text and of the LCD text, per skin (same as the app)
+            val ink = if (dark) 0xFFECEAE4.toInt() else 0xFF232321.toInt()
+            val ink2 = if (dark) 0xFFADAAA2.toInt() else 0xFF5E5C57.toInt()
+            val seg = when (k) { "graphite" -> 0xFFF4AE45; "sage" -> 0xFF222720; "walnut" -> 0xFF2A231B; else -> 0xFF252523 }.toInt()
+            val dim = when (k) { "graphite" -> 0xFFA48A58; "sage" -> 0xFF4C5549; "walnut" -> 0xFF6B5D43; else -> 0xFF555852 }.toInt()
+            v.setTextColor(R.id.w_brand, ink)
+            v.setTextColor(R.id.w_model, ink2)
+            v.setTextColor(R.id.w_label, ink2)
+            v.setTextColor(R.id.w_title, seg)
+            v.setTextColor(R.id.w_artist, dim)
+
+            // tidy YouTube names: "Song (Official MV)" -> "Song"
+            val (cleanArtist, cleanTitle) = if (title != null) app.klang.lyrics.LrcLib.clean(title, artist) else ("" to "")
+            v.setTextViewText(R.id.w_title, if (title == null) "Klang" else cleanTitle.ifBlank { title })
+            v.setTextViewText(R.id.w_artist, if (title == null) "press play to start" else cleanArtist.ifBlank { artist })
+            v.setTextViewText(R.id.w_label, if (playing) "playing" else "paused")
             v.setOnClickPendingIntent(R.id.w_prev, mediaButton(context, KeyEvent.KEYCODE_MEDIA_PREVIOUS))
             v.setOnClickPendingIntent(R.id.w_play, mediaButton(context, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
             v.setOnClickPendingIntent(R.id.w_next, mediaButton(context, KeyEvent.KEYCODE_MEDIA_NEXT))

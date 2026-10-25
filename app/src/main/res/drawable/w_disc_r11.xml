@@ -1,0 +1,1 @@
+<rotate xmlns:android="http://schemas.android.com/apk/res/android" android:drawable="@drawable/w_disc" android:fromDegrees="330" android:toDegrees="330" android:pivotX="50%" android:pivotY="50%"/>
