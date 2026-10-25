@@ -38,8 +38,8 @@ object Covers {
 
     private fun key(s: String): String = Integer.toHexString(s.hashCode())
 
-    // label colours, after the coloured caps of the OP-1: red, orange, blue, sand, grey, white
-    private val labels = intArrayOf(0xFFF01E14.toInt(), 0xFFFF7A1A.toInt(), 0xFF2F5BEA.toInt(), 0xFFD9C8A9.toInt(), 0xFF9A9893.toInt(), 0xFFFFFFFF.toInt())
+    // label colours, after the coloured caps of the OP-1: red, orange, blue, sand, grey, black
+    private val labels = intArrayOf(0xFFF01E14.toInt(), 0xFFFF7A1A.toInt(), 0xFF2F5BEA.toInt(), 0xFFD9C8A9.toInt(), 0xFF9A9893.toInt(), 0xFF000000.toInt())
 
     fun renderSong(context: Context, key: String): Bitmap {
         val h = key.toLongOrNull(16) ?: key.hashCode().toLong()
@@ -49,7 +49,7 @@ object Covers {
         c.drawColor(0xFFF5F4F1.toInt())
         val p = Paint(Paint.ANTI_ALIAS_FLAG)
         val label = labels[((h ushr 3) % labels.size).toInt()]
-        val wedge = if (label == 0xFFD9C8A9.toInt() || label == 0xFFFFFFFF.toInt()) 0xFF000000.toInt() else 0xFFFFFFFF.toInt()
+        val wedge = if (label == 0xFFD9C8A9.toInt()) 0xFF000000.toInt() else 0xFFFFFFFF.toInt()
         ShareCard.drawRecord(c, SIZE * 0.47f, SIZE * 0.53f, SIZE * 0.38f, ((h ushr 7) % 360).toFloat(), skin, p, true, label, wedge)
         brand(context, c)
         return bmp
@@ -124,7 +124,7 @@ object Covers {
         val seg = uri.pathSegments
         if (seg.size < 2) return null
         val dir = File(context.cacheDir, "art").apply { mkdirs() }
-        val f = File(dir, "${seg[0]}-${seg[1].replace(Regex("[^A-Za-z0-9_-]"), "_")}-v2.png")
+        val f = File(dir, "${seg[0]}-${seg[1].replace(Regex("[^A-Za-z0-9_-]"), "_")}-v1.png")
         if (f.exists() && f.length() > 0) return f
         val bmp = when (seg[0]) {
             "song" -> renderSong(context, seg[1])
