@@ -184,17 +184,27 @@ class KlangWidget : AppWidgetProvider() {
             val ap = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
                 typeface = if (thai(artist)) f.regular else Typeface.MONOSPACE; textSize = sp(px, 11f); color = pal.dim
             }
-            val artistL = if (artist.isNotBlank()) layout(artist, ap, w, 1) else null
-            val gap = if (artistL != null) px(2f).toInt() else 0
-            val oneLine = layout(title, tp, w, 1)
-            val lineH = oneLine.height
-            val room = h - (artistL?.height ?: 0) - gap
-            val titleL = if (room >= lineH * 2 - px(2f)) layout(title, tp, w, 2) else oneLine
-            val total = titleL.height + gap + (artistL?.height ?: 0)
+            // fit: two title lines if there is room, else one; shrink the title a little before dropping the artist
+            var size = 13.5f
+            var titleL: StaticLayout
+            var artistL: StaticLayout?
+            while (true) {
+                tp.textSize = sp(px, size)
+                ap.textSize = sp(px, (size * 0.82f).coerceAtLeast(10f))
+                artistL = if (artist.isNotBlank()) layout(artist, ap, w, 1) else null
+                val artistH = artistL?.height ?: 0
+                val two = layout(title, tp, w, 2)
+                val one = layout(title, tp, w, 1)
+                titleL = if (two.lineCount > 1 && two.height + artistH <= h) two else one
+                if (titleL.height + artistH <= h || size <= 11.5f) break
+                size -= 0.5f
+            }
+            if (artistL != null && titleL.height + artistL.height > h) artistL = null
+            val total = titleL.height + (artistL?.height ?: 0)
             var y = ((h - total) / 2f).coerceAtLeast(0f)
             c.save(); c.translate(0f, y); titleL.draw(c); c.restore()
-            y += titleL.height + gap
-            if (artistL != null && y + artistL.height <= h + px(2f)) { c.save(); c.translate(0f, y); artistL.draw(c); c.restore() }
+            y += titleL.height
+            if (artistL != null) { c.save(); c.translate(0f, y); artistL.draw(c); c.restore() }
             return bmp
         }
 
@@ -203,8 +213,8 @@ class KlangWidget : AppWidgetProvider() {
                 .setAlignment(Layout.Alignment.ALIGN_NORMAL)
                 .setMaxLines(maxLines)
                 .setEllipsize(TextUtils.TruncateAt.END)
-                .setIncludePad(true)
-                .setLineSpacing(0f, 0.95f)
+                .setIncludePad(false)
+                .setLineSpacing(0f, 0.8f)
                 .build()
 
         /** Same route as headphone buttons: Media3 starts playback (resuming the last queue if needed). */
