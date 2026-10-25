@@ -51,6 +51,11 @@ import java.util.concurrent.Executors
  */
 class PlaybackService : MediaLibraryService() {
 
+    companion object {
+        /** True while the player exists in this process (a killed app never looks "playing" on the widget). */
+        @Volatile var alive = false
+    }
+
     private var session: MediaLibrarySession? = null
     private val handler = Handler(Looper.getMainLooper())
     private val io = MoreExecutors.listeningDecorator(Executors.newSingleThreadExecutor())
@@ -91,6 +96,7 @@ class PlaybackService : MediaLibraryService() {
 
     override fun onCreate() {
         super.onCreate()
+        alive = true
         val context = this
         AudioEngine.loadSettings(context)
 
@@ -159,6 +165,7 @@ class PlaybackService : MediaLibraryService() {
             release()
         }
         session = null
+        alive = false
         io.shutdown()
         super.onDestroy()
     }
