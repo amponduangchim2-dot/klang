@@ -32,28 +32,28 @@ data class Skin(
 )
 
 object Skins {
-    /** The "Droidamp Rams" concept: warm white plastic, light LCD, orange key. */
+    /** Bright white plastic, black OLED display, red accent, black seams (after the OP-1). */
     val studio = Skin(
-        id = "studio", label = "studio", note = "white plastic, light LCD", dark = false,
-        desk = Color(0xFFE2E0DA), shell = Color(0xFFF3F2EE), tile = Color(0xFFE5E3DD), tile2 = Color(0xFFDCDAD3), line = Color(0xFFCDCAC2),
-        ink = Color(0xFF232321), ink2 = Color(0xFF5E5C57), ink3 = Color(0xFF9F9D96), hole = Color(0xFF2A2A27),
+        id = "studio", label = "studio", note = "bright white, OLED display", dark = false, seam = Color.Black,
+        desk = Color(0xFFF0EFEC), shell = Color(0xFFFCFCFA), tile = Color(0xFFF5F4F1), tile2 = Color(0xFFEBEAE6), line = Color(0xFFDAD8D2),
+        ink = Color.Black, ink2 = Color(0xFF55534F), ink3 = Color(0xFF9A9893), hole = Color.Black,
         sage = Color(0xFFB3BAB4), sageLight = Color(0xFFCDD3CD), sageDark = Color(0xFF959C96),
-        lcd = Color(0xFFC8CBC4), lcd2 = Color(0xFFBDC0B9), seg = Color(0xFF252523), ghost = Color(0xFFB2B5AE), lcdDim = Color(0xFF555852),
-        glow = Color(0xFFF7E9D6), glow2 = Color(0xFFEFD2AC), scaleInk = Color(0xFF4A3B2C), scaleInk2 = Color(0xFF94795A), needle = Color(0xFFC9362A),
-        orange = Color(0xFFF05A1A), orangeDark = Color(0xFFC64712), orangeLight = Color(0xFFFF7038),
-        keyHi = Color(0xFFFCFBF8), keyLo = Color(0xFFECEBE6), keyLip = Color(0xFFC6C3BB),
-        keyOn = Color(0xFF232321), keyOnLo = Color(0xFF111110), keyOnLip = Color(0xFF000000), keyOnInk = Color.White,
-        tickMajor = Color(0xFF3A3A37),
+        lcd = Color.Black, lcd2 = Color.Black, seg = Color.White, ghost = Color(0xFF171717), lcdDim = Color(0xFF8E8E8E),
+        glow = Color(0xFFF7E9D6), glow2 = Color(0xFFEFD2AC), scaleInk = Color(0xFF4A3B2C), scaleInk2 = Color(0xFF94795A), needle = Color(0xFFF01E14),
+        orange = Color(0xFFF01E14), orangeDark = Color(0xFFB0130B), orangeLight = Color(0xFFFF4B3E),
+        keyHi = Color.White, keyLo = Color(0xFFF1F0ED), keyLip = Color(0xFFD0CEC7),
+        keyOn = Color.Black, keyOnLo = Color.Black, keyOnLip = Color.Black, keyOnInk = Color.White,
+        tickMajor = Color.Black,
         wood = Color(0xFFC98A4F), wood2 = Color(0xFFB37440),
     )
 
-    /** Black anodised version with an amber display. */
+    /** Black anodised version. */
     val graphite = studio.copy(
-        id = "graphite", label = "graphite", note = "black, amber display", dark = true, seam = Color(0xFF070707),
+        id = "graphite", label = "graphite", note = "black, OLED display", dark = true, seam = Color.Black,
         desk = Color(0xFF121211), shell = Color(0xFF1C1C1B), tile = Color(0xFF272725), tile2 = Color(0xFF30302D), line = Color(0xFF3B3B38),
         ink = Color(0xFFECEAE4), ink2 = Color(0xFFADAAA2), ink3 = Color(0xFF6F6D67), hole = Color(0xFF0A0A09),
         sage = Color(0xFF6E756F), sageLight = Color(0xFF8C938D), sageDark = Color(0xFF525853),
-        lcd = Color(0xFF2A2C26), lcd2 = Color(0xFF20221D), seg = Color(0xFFF4AE45), ghost = Color(0xFF393B33), lcdDim = Color(0xFFA48A58),
+        lcd = Color.Black, lcd2 = Color.Black, seg = Color.White, ghost = Color(0xFF171717), lcdDim = Color(0xFF8E8E8E),
         keyHi = Color(0xFF3C3C39), keyLo = Color(0xFF2F2F2C), keyLip = Color(0xFF111110),
         keyOn = Color(0xFFECEAE4), keyOnLo = Color(0xFFC9C6BE), keyOnLip = Color(0xFF85827A), keyOnInk = Color(0xFF1C1C1B),
         tickMajor = Color(0xFFC9C6BE),
@@ -62,24 +62,24 @@ object Skins {
 
     /** Grey-green housing, like the sage push buttons. */
     val sage = studio.copy(
-        id = "sage", label = "sage", note = "grey-green housing", dark = false, seam = Color(0xFF29302A),
+        id = "sage", label = "sage", note = "grey-green housing", dark = false, seam = Color.Black,
         desk = Color(0xFFC8CDC5), shell = Color(0xFFE3E7E1), tile = Color(0xFFD3D9D1), tile2 = Color(0xFFC8CFC6), line = Color(0xFFB5BDB2),
         ink = Color(0xFF1E231F), ink2 = Color(0xFF4F5750), ink3 = Color(0xFF89928A), hole = Color(0xFF262B27),
         sage = Color(0xFF9EA89F), sageLight = Color(0xFFBEC6BF), sageDark = Color(0xFF808A81),
-        lcd = Color(0xFFC6CDBC), lcd2 = Color(0xFFB9C1AE), seg = Color(0xFF222720), ghost = Color(0xFFAAB2A0), lcdDim = Color(0xFF4C5549),
+        lcd = Color.Black, lcd2 = Color.Black, seg = Color.White, ghost = Color(0xFF171717), lcdDim = Color(0xFF8E8E8E),
         keyHi = Color(0xFFF6F8F4), keyLo = Color(0xFFE3E8E0), keyLip = Color(0xFFB2BBAF),
-        keyOn = Color(0xFF1E231F), keyOnLo = Color(0xFF0E110F),
+        keyOn = Color.Black, keyOnLo = Color.Black,
         tickMajor = Color(0xFF353B36),
     )
 
-    /** Cream with walnut cheeks and a warm backlit display. */
+    /** Warm cream housing. */
     val walnut = studio.copy(
-        id = "walnut", label = "walnut", note = "cream, warm display", dark = false, seam = Color(0xFF3A3129),
+        id = "walnut", label = "walnut", note = "cream, OLED display", dark = false, seam = Color.Black,
         desk = Color(0xFFDAD0BE), shell = Color(0xFFF4EEE3), tile = Color(0xFFE8DFCE), tile2 = Color(0xFFDED3BF), line = Color(0xFFCBBDA3),
         ink = Color(0xFF29231C), ink2 = Color(0xFF615646), ink3 = Color(0xFFA19581), hole = Color(0xFF2E2720),
-        lcd = Color(0xFFDCCFAD), lcd2 = Color(0xFFCFC09C), seg = Color(0xFF2A231B), ghost = Color(0xFFC4B690), lcdDim = Color(0xFF6B5D43),
+        lcd = Color.Black, lcd2 = Color.Black, seg = Color.White, ghost = Color(0xFF171717), lcdDim = Color(0xFF8E8E8E),
         keyHi = Color(0xFFFFFDF8), keyLo = Color(0xFFF0E9DD), keyLip = Color(0xFFC6B89E),
-        keyOn = Color(0xFF29231C), keyOnLo = Color(0xFF15110D),
+        keyOn = Color.Black, keyOnLo = Color.Black,
         tickMajor = Color(0xFF3D342A),
         wood = Color(0xFF94603A), wood2 = Color(0xFF774726),
     )

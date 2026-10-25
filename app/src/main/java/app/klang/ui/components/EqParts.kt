@@ -234,6 +234,7 @@ fun NameDialog(
                     onValueChange = { text = it; error = null },
                     singleLine = true,
                     textStyle = K.lcd(text, K.lcdText.copy(fontSize = 15.sp)),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(K.orange),
                     modifier = Modifier.fillMaxWidth()
                 )
             }

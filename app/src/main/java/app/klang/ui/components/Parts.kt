@@ -93,22 +93,8 @@ fun Lamp(on: Boolean, modifier: Modifier = Modifier) {
 fun LcdBox(modifier: Modifier = Modifier, padding: Dp = 9.dp, content: @Composable ColumnScope.() -> Unit) {
     Box(
         modifier
-            .background(K.line, RoundedCornerShape(14.dp))
-            .padding(1.dp)
-            .background(K.shell, RoundedCornerShape(13.dp))
-            .padding(3.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(9.dp))
             .background(Brush.verticalGradient(listOf(K.lcd, K.lcd2)))
-            .drawWithContent {
-                drawContent()
-                // inner top shadow, like a recessed glass
-                drawRect(
-                    Brush.verticalGradient(
-                        listOf(Color.Black.copy(alpha = 0.16f), Color.Transparent),
-                        endY = 5.dp.toPx()
-                    )
-                )
-            }
     ) {
         Column(Modifier.padding(padding), content = content)
     }
@@ -198,19 +184,22 @@ fun OpKey(
             val c = center
             val r = d.toPx() / 2f
             // well
-            drawCircle(Brush.verticalGradient(listOf(Color.Black.copy(alpha = if (dark) 0.35f else 0.10f), Color.White.copy(alpha = if (dark) 0.04f else 0.5f))), r * 1.16f, c)
+            drawCircle(Brush.linearGradient(listOf(Color.Black.copy(alpha = if (dark) 0.4f else 0.09f), Color.White.copy(alpha = if (dark) 0.05f else 0.9f)), start = c - Offset(r, r), end = c + Offset(r, r)), r * 1.16f, c)
             // soft shadow
             val drop = if (pressed) 0.6.dp.toPx() else 2.2.dp.toPx()
-            for (i in 3 downTo 1) drawCircle(Color.Black.copy(alpha = (if (pressed) 0.05f else 0.07f) * i / 3f), r + i * 1.2.dp.toPx(), c + Offset(0f, drop + i * 0.6.dp.toPx()))
-            val cc = c + Offset(0f, if (pressed) 1.dp.toPx() else 0f)
-            drawCircle(K.keyLip, r, cc + Offset(0f, 1.2.dp.toPx()))
+            for (i in 3 downTo 1) {
+                val o = drop + i * 0.7.dp.toPx()
+                drawCircle(Color.Black.copy(alpha = (if (pressed) 0.05f else 0.075f) * i / 3f), r + i * 1.1.dp.toPx(), c + Offset(o * 0.85f, o))
+            }
+            val cc = c + Offset(if (pressed) 0.7.dp.toPx() else 0f, if (pressed) 1.dp.toPx() else 0f)
+            drawCircle(K.keyLip, r, cc + Offset(0.9.dp.toPx(), 1.2.dp.toPx()))
             drawCircle(
-                Brush.radialGradient(listOf(K.keyHi, K.keyLo), center = cc + Offset(-r * 0.2f, -r * 0.45f), radius = r * 1.5f),
+                Brush.radialGradient(listOf(K.keyHi, K.keyLo), center = cc + Offset(-r * 0.4f, -r * 0.4f), radius = r * 1.6f),
                 r, cc
             )
             drawCircle(Color.White.copy(alpha = if (dark) 0.06f else 0.7f), r - 0.6.dp.toPx(), cc, style = Stroke(0.8.dp.toPx()))
         }
-        Box(Modifier.offset(y = if (pressed) 1.dp else 0.dp), contentAlignment = Alignment.Center, content = content)
+        Box(Modifier.offset(x = if (pressed) 0.7.dp else 0.dp, y = if (pressed) 1.dp else 0.dp), contentAlignment = Alignment.Center, content = content)
     }
 }
 
@@ -274,7 +263,7 @@ fun Key(
         Box(
             Modifier
                 .fillMaxSize()
-                .padding(top = 3.dp)
+                .padding(top = 3.dp, start = 2.dp)
                 .shadow(if (pressed) 0.5.dp else 1.5.dp, shape, clip = false, ambientColor = Color.Black.copy(alpha = 0.4f), spotColor = Color.Black.copy(alpha = 0.4f))
                 .background(lip, shape)
         )
@@ -282,8 +271,8 @@ fun Key(
         Box(
             Modifier
                 .fillMaxSize()
-                .padding(bottom = 2.5.dp)
-                .offset(y = travel)
+                .padding(bottom = 2.5.dp, end = 2.dp)
+                .offset(x = travel * 0.7f, y = travel)
                 .background(Brush.verticalGradient(face), shape)
                 .border(0.5.dp, Color.White.copy(alpha = if (orange || dark || K.skin.dark) 0.12f else 0.8f), shape),
             contentAlignment = Alignment.Center
@@ -394,13 +383,14 @@ fun Knob(
         }
         val body = if (style == KnobStyle.White) r * 0.66f else r * 0.74f
         // shadow
-        drawCircle(Color.Black.copy(alpha = 0.22f), body, c + Offset(0f, body * 0.12f))
+        drawCircle(Color.Black.copy(alpha = 0.10f), body * 1.04f, c + Offset(body * 0.13f, body * 0.16f))
+        drawCircle(Color.Black.copy(alpha = 0.16f), body, c + Offset(body * 0.07f, body * 0.09f))
         if (style == KnobStyle.White) {
-            drawCircle(Color(0xFF3A3A37), body + 1.2.dp.toPx(), c)
-            drawCircle(Brush.radialGradient(listOf(Color.White, Color(0xFFEBE9E4)), center = c + Offset(0f, -body * 0.4f), radius = body * 1.4f), body, c)
+            drawCircle(K.keyLip, body + 1.dp.toPx(), c)
+            drawCircle(Brush.radialGradient(listOf(Color.White, Color(0xFFEDECE9)), center = c + Offset(-body * 0.35f, -body * 0.4f), radius = body * 1.6f), body, c)
             if (cap != null) {
-                drawCircle(Color.Black.copy(alpha = 0.18f), body * 0.46f, c + Offset(0f, body * 0.05f))
-                drawCircle(Brush.radialGradient(listOf(cap.copy(alpha = 0.85f), cap), center = c + Offset(-body * 0.1f, -body * 0.15f), radius = body * 0.5f), body * 0.42f, c)
+                drawCircle(Color.Black.copy(alpha = 0.18f), body * 0.45f, c + Offset(body * 0.04f, body * 0.05f))
+                drawCircle(Brush.radialGradient(listOf(cap.copy(alpha = 0.85f), cap), center = c + Offset(-body * 0.15f, -body * 0.15f), radius = body * 0.5f), body * 0.42f, c)
             } else drawCircle(K.orange, body * 0.28f, c, style = Stroke(2.dp.toPx()))
         } else {
             drawCircle(Brush.radialGradient(listOf(Color(0xFFD3D8D3), K.sage, K.sageDark), center = c + Offset(-body * 0.25f, -body * 0.35f), radius = body * 1.5f), body, c)
@@ -408,7 +398,7 @@ fun Knob(
         rotate(-135f + current * 270f, c) {
             if (style == KnobStyle.White) {
                 drawRoundRect(
-                    Color(0xFF232321),
+                    Color.Black,
                     topLeft = Offset(c.x - 2.5.dp.toPx(), c.y - body * 0.88f),
                     size = androidx.compose.ui.geometry.Size(5.dp.toPx(), body * 0.26f),
                     cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx())

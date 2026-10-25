@@ -95,7 +95,7 @@ fun GrilleVisualizer(mode: VisMode, playing: Boolean, onTap: () -> Unit, modifie
                     drawCircle(K.orange.copy(alpha = 0.25f), hole * 1.7f, p)
                     drawCircle(K.orange, hole * 1.1f, p)
                 } else {
-                    drawCircle(Color.White.copy(alpha = if (K.skin.dark) 0.05f else 0.55f), hole, p + Offset(0f, 0.7f))
+                    drawCircle(Color.White.copy(alpha = if (K.skin.dark) 0.06f else 0.9f), hole, p + Offset(0.6f, 0.8f))
                     drawCircle(K.hole, hole, p)
                 }
             }

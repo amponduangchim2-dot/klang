@@ -16,5 +16,5 @@
 <path android:fillColor="#2A2A27" android:pathData="M56.76,64.35 H70.21 A1.16,1.16 0 0 1 70.21,66.68 H56.76 A1.16,1.16 0 0 1 56.76,64.35 Z"/>
 <path android:fillColor="#2A2A27" android:pathData="M42.28,69.53 H51.24 A1.16,1.16 0 0 1 51.24,71.86 H42.28 A1.16,1.16 0 0 1 42.28,69.53 Z"/>
 <path android:fillColor="#2A2A27" android:pathData="M56.76,69.53 H65.72 A1.16,1.16 0 0 1 65.72,71.86 H56.76 A1.16,1.16 0 0 1 56.76,69.53 Z"/>
-<path android:fillColor="#F05A1A" android:pathData="M78,30 m-4,0 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0"/>
+<path android:fillColor="#F01E14" android:pathData="M78,30 m-4,0 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0"/>
 </vector>

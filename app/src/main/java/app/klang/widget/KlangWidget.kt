@@ -72,11 +72,9 @@ class KlangWidget : AppWidgetProvider() {
             val skin = p.getString("skin", "studio")
             val k = when (skin) { "graphite", "sage", "walnut" -> skin; else -> "studio" }
             val dark = k == "graphite"
-            val pal = when (k) {
-                "graphite" -> Palette(0xFFECEAE4.toInt(), 0xFFADAAA2.toInt(), 0xFF6F6D67.toInt(), 0xFFF4AE45.toInt(), 0xFFA48A58.toInt(), 0xFFF05A1A.toInt())
-                "sage" -> Palette(0xFF1E231F.toInt(), 0xFF4F5750.toInt(), 0xFF89928A.toInt(), 0xFF222720.toInt(), 0xFF4C5549.toInt(), 0xFFF05A1A.toInt())
-                "walnut" -> Palette(0xFF29231C.toInt(), 0xFF615646.toInt(), 0xFFA19581.toInt(), 0xFF2A231B.toInt(), 0xFF6B5D43.toInt(), 0xFFF05A1A.toInt())
-                else -> Palette(0xFF232321.toInt(), 0xFF5E5C57.toInt(), 0xFF9F9D96.toInt(), 0xFF252523.toInt(), 0xFF555852.toInt(), 0xFFF05A1A.toInt())
+            val pal = when (k) {   // ink, ink2, ink3, display text, display dim, red
+                "graphite" -> Palette(0xFFECEAE4.toInt(), 0xFFADAAA2.toInt(), 0xFF6F6D67.toInt(), 0xFFFFFFFF.toInt(), 0xFF8E8E8E.toInt(), 0xFFF01E14.toInt())
+                else -> Palette(0xFF000000.toInt(), 0xFF55534F.toInt(), 0xFF9A9893.toInt(), 0xFFFFFFFF.toInt(), 0xFF8E8E8E.toInt(), 0xFFF01E14.toInt())
             }
 
             // ---- real size of this widget (portrait: min width, max height)

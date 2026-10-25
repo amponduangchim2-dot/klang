@@ -102,6 +102,7 @@ fun SearchScreen(s: SearchUi, skipNonMusic: Boolean, a: SearchActions, startTab:
                             textStyle = K.lcd(s.query, K.lcdText.copy(fontSize = 15.sp)),
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                             keyboardActions = KeyboardActions(onSearch = { focus.clearFocus(); a.submit(s.query) }),
+                            cursorBrush = androidx.compose.ui.graphics.SolidColor(K.orange),
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
