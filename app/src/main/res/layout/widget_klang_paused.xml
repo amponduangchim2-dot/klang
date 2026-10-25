@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/w_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/w_bg"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:padding="10dp">
+
+    <FrameLayout
+        android:id="@+id/w_deck"
+        android:layout_width="104dp"
+        android:layout_height="104dp"
+        android:background="@drawable/w_plinth"
+        android:padding="4dp">
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:src="@drawable/w_vinyl_r00" android:importantForAccessibility="no"/>
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:src="@drawable/w_vinyl_sheen" android:importantForAccessibility="no"/>
+        <ImageView android:layout_width="match_parent" android:layout_height="match_parent" android:src="@drawable/w_arm_off" android:importantForAccessibility="no"/>
+    </FrameLayout>
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_marginStart="12dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:id="@+id/w_info"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+            <TextView
+                android:id="@+id/w_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/plex_thai_medium"
+                android:text="klang · paused"
+                android:textColor="#5E5C57"
+                android:textSize="11sp" />
+            <TextView
+                android:id="@+id/w_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:fontFamily="@font/plex_thai_semibold"
+                android:maxLines="2"
+                android:text="Klang"
+                android:textColor="#232321"
+                android:textSize="15sp" />
+            <TextView
+                android:id="@+id/w_artist"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:fontFamily="@font/plex_thai_regular"
+                android:maxLines="1"
+                android:text=""
+                android:textColor="#5E5C57"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:orientation="horizontal">
+            <ImageView
+                android:id="@+id/w_prev"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:background="@drawable/w_key"
+                android:contentDescription="Previous"
+                android:scaleType="center"
+                android:src="@drawable/w_ic_prev" />
+            <ImageView
+                android:id="@+id/w_play"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_marginStart="5dp"
+                android:layout_marginEnd="5dp"
+                android:layout_weight="1.4"
+                android:background="@drawable/w_key_orange"
+                android:contentDescription="Play"
+                android:scaleType="center"
+                android:src="@drawable/w_ic_play_white" />
+            <ImageView
+                android:id="@+id/w_next"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:background="@drawable/w_key"
+                android:contentDescription="Next"
+                android:scaleType="center"
+                android:src="@drawable/w_ic_next" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

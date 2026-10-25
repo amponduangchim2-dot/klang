@@ -195,6 +195,26 @@ object YouTube {
 
     private val cache = ConcurrentHashMap<String, Resolved>()
 
+    /** Prefer Opus (about 130-160 kbps) over AAC (128 kbps) when YouTube offers it. */
+    @Volatile var preferOpus: Boolean = true
+
+    /** Videos whose Opus stream failed on this phone: they use AAC from now on. */
+    private val aacOnly: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+    /** The video id the service is re-trying with AAC right now (the screen keeps quiet about it). */
+    @Volatile var retryingId: String? = null
+
+    /** Switches [url] to AAC after a playback error. Returns false if it already was AAC. */
+    fun fallBackToAac(url: String): Boolean {
+        val id = videoId(url) ?: return false
+        val cur = cache[id]
+        if (!preferOpus || id in aacOnly || (cur != null && cur.khz == 44)) return false
+        aacOnly += id
+        cache.remove(id)
+        retryingId = id
+        return true
+    }
+
     fun cached(id: String): Resolved? = cache[id]?.takeIf { it.expiresAtMs > System.currentTimeMillis() + 60_000 }
 
     /** Finds the best progressive audio stream (M4A first, highest bitrate). Blocking. */
@@ -204,7 +224,7 @@ object YouTube {
         init()
         val r = guard {
             val info = StreamInfo.getInfo(service, watchUrl(id))
-            val stream = pick(info.audioStreams) ?: throw TrackUnavailable("No playable audio for this video")
+            val stream = pick(info.audioStreams, opus = preferOpus && id !in aacOnly) ?: throw TrackUnavailable("No playable audio for this video")
             val expire = Uri.parse(stream.content).getQueryParameter("expire")?.toLongOrNull()?.times(1000)
                 ?: (System.currentTimeMillis() + 5 * 3600_000L)
             Resolved(
@@ -222,10 +242,11 @@ object YouTube {
         return r
     }
 
-    private fun pick(streams: List<AudioStream>): AudioStream? {
+    private fun pick(streams: List<AudioStream>, opus: Boolean): AudioStream? {
         val direct = streams.filter { it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.isUrl }
-        return direct.filter { it.format == MediaFormat.M4A }.maxByOrNull { it.averageBitrate }
-            ?: direct.maxByOrNull { it.averageBitrate }
+        val opusBest = direct.filter { it.format == MediaFormat.WEBMA_OPUS }.maxByOrNull { it.averageBitrate }
+        val aacBest = direct.filter { it.format == MediaFormat.M4A }.maxByOrNull { it.averageBitrate }
+        return (if (opus) opusBest ?: aacBest else aacBest ?: opusBest) ?: direct.maxByOrNull { it.averageBitrate }
     }
 
     /** User agent that matches the YouTube client the stream URL was made for. */

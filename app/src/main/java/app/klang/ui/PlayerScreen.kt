@@ -281,7 +281,7 @@ fun PlayerScreen(ui: PlayerUi, sleepChoice: Int, sleepLeftMs: Long, libraryCount
             ToolSpec("lyrics", Glyph.Lyrics, "lrclib") { a.open(Screen.Lyrics) },
             ToolSpec("skins", Glyph.Skins, Skins.byId(K.skin.id).label) { a.open(Screen.Skins) },
             ToolSpec("sleep", Glyph.Sleep, sleepLabel, active = sleepChoice != 0) { a.cycleSleep() },
-            ToolSpec("cast", Glyph.Cast, "off") { a.notYet("Cast") },
+            ToolSpec("output", Glyph.Cast, "speaker · bt") { a.notYet("Cast") },
             ToolSpec("share", Glyph.Share, "card") { a.open(Screen.Share) },
             ToolSpec("options", Glyph.Options, null) { a.open(Screen.Options) },
         )

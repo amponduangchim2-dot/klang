@@ -97,6 +97,36 @@ class MainActivity : ComponentActivity() {
         startActivity(Intent.createChooser(send, title))
     }
 
+    /** The equalizer screen of whichever outside EQ app is installed, attached to Klang's audio. */
+    private fun openExternalEq() {
+        val i = android.content.Intent(android.media.audiofx.AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL)
+            .putExtra(android.media.audiofx.AudioEffect.EXTRA_AUDIO_SESSION, app.klang.playback.AudioEngine.audioSessionId)
+            .putExtra(android.media.audiofx.AudioEffect.EXTRA_PACKAGE_NAME, packageName)
+            .putExtra(android.media.audiofx.AudioEffect.EXTRA_CONTENT_TYPE, android.media.audiofx.AudioEffect.CONTENT_TYPE_MUSIC)
+        if (app.klang.playback.AudioEngine.audioSessionId == 0) {
+            Toast.makeText(this, "Play a song first, then open the equalizer app.", Toast.LENGTH_LONG).show()
+            return
+        }
+        runCatching { @Suppress("DEPRECATION") startActivityForResult(i, 77) }.onFailure {
+            Toast.makeText(this, "No equalizer app found. Install one such as Wavelet or Equalizer FX.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /** The phone's own "play on" picker: Bluetooth, wired, and speakers the phone can cast to. */
+    private fun openOutputPicker() {
+        val ok = when {
+            Build.VERSION.SDK_INT >= 34 -> runCatching { android.media.MediaRouter2.getInstance(this).showSystemOutputSwitcher() }.getOrDefault(false)
+            Build.VERSION.SDK_INT >= 30 -> runCatching {
+                sendBroadcast(Intent("com.android.systemui.action.LAUNCH_MEDIA_OUTPUT_DIALOG")
+                    .setPackage("com.android.systemui")
+                    .putExtra("package_name", packageName))
+                true
+            }.getOrDefault(false)
+            else -> false
+        }
+        if (!ok) runCatching { startActivity(Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS)) }
+    }
+
     private fun openUrl(url: String) {
         runCatching { startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))) }
             .onFailure { Toast.makeText(this, "No browser found", Toast.LENGTH_SHORT).show() }
@@ -240,7 +270,7 @@ class MainActivity : ComponentActivity() {
                     toggleEq = vm::toggleEq,
                     cycleSleep = vm::cycleSleep,
                     open = { cameFromOptions = false; screen = it },
-                    notYet = { what -> Toast.makeText(this, "$what arrives in the next build", Toast.LENGTH_SHORT).show() },
+                    notYet = { what -> if (what == "Cast") openOutputPicker() else Toast.makeText(this, "$what arrives in the next build", Toast.LENGTH_SHORT).show() },
                 )
             }
 
@@ -352,6 +382,7 @@ class MainActivity : ComponentActivity() {
                                 eqActions.apply, eqActions.reset, eqActions.toggleShade, eqActions.save,
                                 eqActions.rename, eqActions.delete, eqActions.importFile, eqActions.exportFile,
                                 eqActions.share, back = { screen = Screen.Player },
+                                external = { openExternalEq() },
                             )
                         })
                     }
@@ -430,6 +461,7 @@ class MainActivity : ComponentActivity() {
                             setBig = vm::setBigControls,
                             setKeepOn = vm::setKeepScreenOn,
                             setSkipTalk = vm::setSkipNonMusic,
+                            setYtOpus = vm::setYtOpus,
                             openSkins = { cameFromOptions = true; screen = Screen.Skins },
                             checkUpdate = vm::checkForUpdate,
                             download = { url -> openUrl(url) },

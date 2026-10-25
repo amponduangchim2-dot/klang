@@ -52,6 +52,7 @@ class EqActions(
     val exportFile: () -> Unit,
     val share: () -> Unit,
     val back: () -> Unit,
+    val external: () -> Unit = {},
 )
 
 private val FREQ_LABELS = listOf("60", "170", "310", "600", "1k", "3k", "6k", "12k", "14k", "16k")
@@ -190,6 +191,17 @@ fun EqScreen(eq: EqUi, a: EqActions) {
                 Spacer(Modifier.height(6.dp))
                 Text("Pick one of your presets to rename or delete it.", style = K.label)
             }
+        }
+        Tile(Modifier.fillMaxWidth()) {
+            LabelRow("other equalizer apps", null)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Klang tells equalizer apps such as Wavelet, Equalizer FX or JamesDSP when it plays, so they can work on its sound. " +
+                    "If you use one, turn Klang's own EQ off so the two do not add up.",
+                style = K.body.copy(fontSize = 13.sp, color = K.ink2)
+            )
+            Spacer(Modifier.height(8.dp))
+            TextKey("open equalizer app", a.external, Modifier.fillMaxWidth().height(40.dp))
         }
         Spacer(Modifier.height(8.dp))
     }

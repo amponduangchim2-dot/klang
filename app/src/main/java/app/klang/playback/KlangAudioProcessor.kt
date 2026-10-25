@@ -17,6 +17,7 @@ import kotlin.math.sqrt
 
 /**
  * 16-bit PCM processor: preamp + 10 peaking biquads (Winamp bands), stereo balance,
+ * a peak limiter (so EQ boosts never hard-clip), TPDF dither back to 16 bit,
  * and a small FFT that feeds [AudioEngine.levels] / [AudioEngine.wave] for the visualizer.
  */
 class KlangAudioProcessor : BaseAudioProcessor() {
@@ -35,6 +36,17 @@ class KlangAudioProcessor : BaseAudioProcessor() {
     private var preGain = 1f
     private var eqOn = true
     private var coefVersion = -1
+
+    // limiter: instant attack, ~150 ms release, ceiling just under full scale
+    private val ceiling = 0.966f            // -0.3 dBFS
+    private var limGain = 1f
+    private var release = 0f
+    private val frameBuf = FloatArray(8)
+    private var seed = 0x2545F491
+
+    /** Gain reduction applied most recently, in dB (0 = limiter idle). For tests and meters. */
+    var lastReductionDb = 0f
+        private set
 
     private var z1 = Array(2) { FloatArray(n) }
     private var z2 = Array(2) { FloatArray(n) }
@@ -60,6 +72,8 @@ class KlangAudioProcessor : BaseAudioProcessor() {
         z2 = Array(channels) { FloatArray(n) }
         coefVersion = -1
         ringPos = 0
+        limGain = 1f
+        release = 1f - kotlin.math.exp(-1.0 / (0.15 * sampleRate)).toFloat()
     }
 
     override fun onReset() {
@@ -113,8 +127,22 @@ class KlangAudioProcessor : BaseAudioProcessor() {
         val filter = eqOn && anyBand
         val pre = preGain
 
+        val processing = filter || pre != 1f || bal != 0f
+        if (release == 0f) release = 1f - kotlin.math.exp(-1.0 / (0.15 * sampleRate)).toFloat()
+        var minGain = 1f
         for (frame in 0 until frames) {
-            var mono = 0f
+            if (!processing) {
+                // untouched: copy the samples bit for bit
+                var mono = 0f
+                for (c in 0 until ch) {
+                    val v = inputBuffer.short
+                    out.putShort(v)
+                    mono += v / 32768f
+                }
+                feed(mono / ch)
+                continue
+            }
+            var peak = 0f
             for (c in 0 until ch) {
                 var x = inputBuffer.short / 32768f
                 x *= pre
@@ -130,15 +158,37 @@ class KlangAudioProcessor : BaseAudioProcessor() {
                     }
                 }
                 if (ch == 2) x *= if (c == 0) leftGain else rightGain
+                if (c < 8) frameBuf[c] = x
+                val ax = if (x < 0f) -x else x
+                if (ax > peak) peak = ax
+            }
+            // limiter
+            val need = if (peak * limGain > ceiling) ceiling / peak else 1f
+            limGain = if (need < limGain) need else limGain + (1f - limGain) * release
+            if (limGain < minGain) minGain = limGain
+            var mono = 0f
+            for (c in 0 until ch) {
+                val x = frameBuf[c.coerceAtMost(7)] * limGain
                 mono += x
-                val s = (x * 32767f).coerceIn(-32768f, 32767f)
+                // TPDF dither of +-1 LSB before rounding to 16 bit
+                val d = nextRand() - nextRand()
+                val s = (x * 32767f + d).let { if (it >= 0f) it + 0.5f else it - 0.5f }.coerceIn(-32768f, 32767f)
                 out.putShort(s.toInt().toShort())
             }
             feed(mono / ch)
         }
+        lastReductionDb = if (minGain < 1f) 20f * log10(minGain) else 0f
         // Drop any trailing partial frame.
         inputBuffer.position(inputBuffer.limit())
         out.flip()
+    }
+
+    /** Uniform 0..1 from a xorshift generator (cheap, good enough for dither). */
+    private fun nextRand(): Float {
+        var x = seed
+        x = x xor (x shl 13); x = x xor (x ushr 17); x = x xor (x shl 5)
+        seed = x
+        return (x ushr 8) / 16777216f
     }
 
     private fun feed(sample: Float) {

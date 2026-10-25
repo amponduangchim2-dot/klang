@@ -172,6 +172,7 @@ class OptionsActions(
     val setBig: (Boolean) -> Unit,
     val setKeepOn: (Boolean) -> Unit,
     val setSkipTalk: (Boolean) -> Unit,
+    val setYtOpus: (Boolean) -> Unit,
     val openSkins: () -> Unit,
     val checkUpdate: () -> Unit,
     val download: (String) -> Unit,
@@ -199,6 +200,13 @@ fun OptionsScreen(o: OptionsUi, skipTalk: Boolean, a: OptionsActions) {
             )
             Spacer(Modifier.height(12.dp))
             SwitchRow("skip talk in YouTube videos", "Jumps over intros and talking with SponsorBlock.", skipTalk) { a.setSkipTalk(!skipTalk) }
+            Spacer(Modifier.height(10.dp))
+            SwitchRow(
+                "best YouTube sound",
+                if (o.ytOpus) "Opus, about 160 kbps. Falls back to AAC by itself if a phone cannot play it."
+                else "AAC 128 kbps, the most compatible stream.",
+                o.ytOpus
+            ) { a.setYtOpus(!o.ytOpus) }
         }
 
         Tile(Modifier.fillMaxWidth()) {

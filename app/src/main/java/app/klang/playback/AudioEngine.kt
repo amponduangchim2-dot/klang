@@ -43,6 +43,21 @@ object AudioEngine {
         version++
     }
 
+    /** The player's audio session, for outside equalizer apps. 0 = none yet. */
+    @Volatile var audioSessionId: Int = 0
+
+    /** Loads the saved sound settings, so playback sounds the same even when it starts without the screen (car, widget). */
+    fun loadSettings(context: android.content.Context) {
+        val p = context.getSharedPreferences("klang", android.content.Context.MODE_PRIVATE)
+        balance = p.getFloat("balance", 0f)
+        userVolume = p.getFloat("volume", 0.7f)
+        eqEnabled = p.getBoolean("eqOn", true)
+        preampDb = p.getFloat("preamp", 0f)
+        setAllGains(FloatArray(BAND_COUNT) { p.getFloat("eq$it", 0f) })
+        fadeMs = p.getInt("fadeSec", 0) * 1000L
+        app.klang.youtube.YouTube.preferOpus = p.getBoolean("ytOpus", true)
+    }
+
     // ---- meters (written by the audio thread) ----
     const val METER_BANDS = 13
     val levels = FloatArray(METER_BANDS)

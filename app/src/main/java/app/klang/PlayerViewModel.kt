@@ -120,6 +120,7 @@ data class OptionsUi(
     val fadeSec: Int = 0,
     val bigControls: Boolean = false,
     val keepScreenOn: Boolean = false,
+    val ytOpus: Boolean = true,
     val versionName: String = "",
     val versionCode: Long = 0,
     val update: UpdateUi = UpdateUi(),
@@ -201,13 +202,17 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             val why = generateSequence(error as Throwable) { it.cause }
                 .firstOrNull { it is app.klang.youtube.TrackUnavailable }?.message
                 ?: error.cause?.message?.take(80) ?: error.errorCodeName
+            // The player service retries YouTube with AAC, or moves on to the next song by itself.
+            val id = controller?.currentMediaItem?.mediaId?.let { YouTube.videoId(it) }
+            if (id != null && id == YouTube.retryingId) return
             _message.value = "Cannot play that: $why"
+        }
+
+        override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+            // Something else changed the queue (the car, a resumed session): follow it.
             val c = controller ?: return
-            if (c.hasNextMediaItem()) {
-                c.seekToNextMediaItem()
-                c.prepare()
-                c.play()
-            }
+            val ids = (0 until c.mediaItemCount).map { c.getMediaItemAt(it).mediaId }
+            if (ids != _queue.value.map { it.song.uri }) syncQueueFrom(c)
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -220,12 +225,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     init {
-        AudioEngine.balance = prefs.getFloat("balance", 0f)
-        AudioEngine.userVolume = prefs.getFloat("volume", 0.7f)
+        AudioEngine.loadSettings(app)
         loadOptions()
-        AudioEngine.eqEnabled = prefs.getBoolean("eqOn", true)
-        AudioEngine.preampDb = prefs.getFloat("preamp", 0f)
-        AudioEngine.setAllGains(FloatArray(AudioEngine.BAND_COUNT) { prefs.getFloat("eq$it", 0f) })
         _ui.value = _ui.value.copy(
             volume = prefs.getFloat("volume", 0.7f),
             balance = AudioEngine.balance,
@@ -336,17 +337,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    private fun Song.toItem(): MediaItem = MediaItem.Builder()
-        .setMediaId(uri)
-        .setUri(uri)
-        .setMediaMetadata(
-            MediaMetadata.Builder()
-                .setTitle(title)
-                .setArtist(artist)
-                .setAlbumTitle(album)
-                .build()
-        )
-        .build()
+    private fun Song.toItem(): MediaItem = app.klang.playback.Items.fromSong(this)
 
     /** Replace the queue with [list] and start playing at [start]. */
     fun playList(list: List<Song>, start: Int) {
@@ -830,6 +821,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             fadeSec = prefs.getInt("fadeSec", 0),
             bigControls = prefs.getBoolean("bigControls", false),
             keepScreenOn = prefs.getBoolean("keepScreenOn", false),
+            ytOpus = prefs.getBoolean("ytOpus", true),
             versionName = info?.versionName ?: "",
             versionCode = code,
         )
@@ -842,13 +834,20 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         val skin = Skins.byId(id)
         K.skin = skin
         _options.value = _options.value.copy(skin = skin.id)
-        prefs.edit().putString("skin", skin.id).apply()
+        prefs.edit().putString("skin", skin.id).commit()
+        app.klang.widget.KlangWidget.refresh(getApplication())
     }
 
     fun setFade(sec: Int) {
         AudioEngine.fadeMs = sec * 1000L
         _options.value = _options.value.copy(fadeSec = sec)
         prefs.edit().putInt("fadeSec", sec).apply()
+    }
+
+    fun setYtOpus(on: Boolean) {
+        YouTube.preferOpus = on
+        _options.value = _options.value.copy(ytOpus = on)
+        prefs.edit().putBoolean("ytOpus", on).apply()
     }
 
     fun setBigControls(on: Boolean) {
@@ -993,16 +992,20 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             .apply()
     }
 
+    private fun syncQueueFrom(c: MediaController) {
+        val list = (0 until c.mediaItemCount).map { i ->
+            val item = c.getMediaItemAt(i)
+            val known = _songs.value.firstOrNull { it.uri == item.mediaId }
+            entry(known ?: app.klang.playback.Items.toSong(item, i))
+        }
+        _queue.value = list
+        _selection.value = emptySet()
+    }
+
     private fun restoreQueue(c: MediaController) {
         if (c.mediaItemCount > 0) {
             // The service kept playing while the screen was gone: rebuild our list from it.
-            val list = (0 until c.mediaItemCount).map { i ->
-                val item = c.getMediaItemAt(i)
-                val md = item.mediaMetadata
-                val known = _songs.value.firstOrNull { it.uri == item.mediaId }
-                entry(known ?: Song(-1L - i, item.mediaId, md.title?.toString() ?: item.mediaId, md.artist?.toString().orEmpty(), md.albumTitle?.toString().orEmpty(), 0L, 0L))
-            }
-            _queue.value = list
+            syncQueueFrom(c)
             return
         }
         val saved = runCatching { JSONArray(prefs.getString("queue", "[]")) }.getOrNull() ?: return
