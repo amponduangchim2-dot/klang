@@ -119,7 +119,10 @@ object YouTube {
     fun listId(url: String): String? = Regex("""[?&]list=([A-Za-z0-9_-]+)""").find(url)?.groupValues?.get(1)
 
     /** YouTube Mix / radio links: their list id starts with "RD" (RDxxxx, RDAMVM…, RDEM…). */
-    fun isMixLink(url: String): Boolean = isYouTube(url) && listId(url)?.startsWith("RD") == true
+    fun isMixLink(url: String): Boolean = isYouTube(url) && listId(url)?.let { it.startsWith("RD") && !it.startsWith("RDCLAK") && !it.startsWith("RDTMAK") } == true && mixUrl(url) != null
+
+    /** A list link that is not a Mix: a normal playlist, or a YouTube Music album list (RDCLAK…). */
+    fun playlistUrl(url: String): String? = listId(url)?.let { "https://www.youtube.com/playlist?list=$it" }
 
     /** A Mix needs a starting video. Rebuilds the link as watch?v=…&list=RD… when the video is missing. */
     fun mixUrl(url: String): String? {
@@ -129,35 +132,66 @@ object YouTube {
     }
 
     /**
-     * Loads a YouTube Mix. Mixes never end and repeat songs across pages, so this keeps the first
-     * [maxItems] different videos and stops when a page brings nothing new. Returns name and songs.
+     * Loads a YouTube Mix: the first [maxItems] different songs. Mixes never end and repeat
+     * songs across pages, so loading stops when a page brings nothing new.
+     *
+     * If YouTube's Mix service does not answer (it changes more often than the rest), the Mix is
+     * rebuilt from the "up next" songs of the starting video and of the songs after it, the way
+     * YouTube's radio works. Returns the name and the songs.
      */
     fun importMix(url: String, maxItems: Int = 100): Pair<String, List<YtItem>> {
         init()
         val u = mixUrl(url) ?: throw TrackUnavailable("This Mix link has no starting video")
-        return guard {
-            val info = PlaylistInfo.getInfo(service, u)
-            val seen = LinkedHashMap<String, YtItem>()
-            fun take(list: List<YtItem>): Int {
-                var added = 0
-                for (it in list) {
-                    val id = videoId(it.url) ?: continue
-                    if (id !in seen && seen.size < maxItems) { seen[id] = it; added++ }
-                }
-                return added
+        val start = videoId(u)!!
+        val viaMix = runCatching { mixPages(u, maxItems) }.getOrNull()
+        if (viaMix != null && viaMix.second.size >= 5) return viaMix
+        return guard { radioFrom(start, maxItems.coerceAtMost(60)) }
+    }
+
+    private fun mixPages(u: String, maxItems: Int): Pair<String, List<YtItem>> {
+        val info = PlaylistInfo.getInfo(service, u)
+        val seen = LinkedHashMap<String, YtItem>()
+        fun take(list: List<YtItem>): Int {
+            var added = 0
+            for (it in list) {
+                val id = videoId(it.url) ?: continue
+                if (id !in seen && seen.size < maxItems) { seen[id] = it; added++ }
             }
-            take(items(info.relatedItems))
-            var next: Page? = info.nextPage
-            var pages = 0
-            while (next != null && seen.size < maxItems && pages < 12) {
-                val page = PlaylistInfo.getMoreItems(service, u, next)
-                if (take(items(page.items)) == 0) break
-                next = if (page.hasNextPage()) page.nextPage else null
-                pages++
-            }
-            if (seen.isEmpty()) throw TrackUnavailable("This Mix is empty or needs a YouTube sign-in")
-            info.name.ifBlank { "YouTube Mix" } to seen.values.toList()
+            return added
         }
+        take(items(info.relatedItems))
+        var next: Page? = info.nextPage
+        var pages = 0
+        while (next != null && seen.size < maxItems && pages < 12) {
+            val page = PlaylistInfo.getMoreItems(service, u, next)
+            if (take(items(page.items)) == 0) break
+            next = if (page.hasNextPage()) page.nextPage else null
+            pages++
+        }
+        return info.name.ifBlank { "YouTube Mix" } to seen.values.toList()
+    }
+
+    /** A Mix made from "up next": the starting song, its related songs, then theirs. */
+    private fun radioFrom(startId: String, maxItems: Int): Pair<String, List<YtItem>> {
+        val seen = LinkedHashMap<String, YtItem>()
+        val first = StreamInfo.getInfo(service, watchUrl(startId))
+        seen[startId] = YtItem(first.url, first.name, cleanUploader(first.uploaderName.orEmpty()), first.duration, null)
+        val toVisit = ArrayDeque<String>()
+        fun addRelated(list: List<*>) {
+            for (it in items(list)) {
+                val id = videoId(it.url) ?: continue
+                if (it.durationSec in 1L..900L && id !in seen && seen.size < maxItems) { seen[id] = it; toVisit.addLast(id) }
+            }
+        }
+        addRelated(first.relatedItems)
+        var visits = 0
+        while (seen.size < maxItems && toVisit.isNotEmpty() && visits < 4) {
+            val id = toVisit.removeFirst()
+            runCatching { StreamInfo.getInfo(service, watchUrl(id)) }.getOrNull()?.let { addRelated(it.relatedItems) }
+            visits++
+        }
+        if (seen.size < 2) throw TrackUnavailable("YouTube did not return songs for this Mix. Try again later.")
+        return "Mix – ${first.name}" to seen.values.toList()
     }
 
     fun isChannelLink(url: String) = Regex("""youtube\.com/(@|channel/|c/|user/)""").containsMatchIn(url)

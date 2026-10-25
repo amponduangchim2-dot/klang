@@ -1069,6 +1069,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private fun openYouTubeLink(url: String, play: Boolean) {
         when {
             YouTube.isMixLink(url) -> importYouTubeMix(url)
+            // YouTube Music album lists (list=RDCLAK…) look like Mixes but are fixed playlists
+            YouTube.listId(url)?.startsWith("RD") == true -> importYouTubePlaylist(YouTube.playlistUrl(url)!!)
             YouTube.isVideoLink(url) && !(YouTube.isPlaylistLink(url) && url.contains("/playlist")) -> {
                 viewModelScope.launch {
                     _search.value = _search.value.copy(loading = true, error = null)
