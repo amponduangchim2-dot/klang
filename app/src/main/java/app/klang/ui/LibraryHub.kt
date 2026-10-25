@@ -1,5 +1,7 @@
 package app.klang.ui
 
+import app.klang.ui.components.Seam
+import app.klang.ui.components.Panel
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -62,10 +64,12 @@ fun LibraryHub(
     a: HubActions,
 ) {
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        ScreenHeader("library", "kl-5", a.back)
+        ScreenHeader("library", "klang audio", a.back)
+        Panel(Modifier.fillMaxWidth().weight(1f, fill = false)) {
+        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Seam)) {
 
         // big tile: local music
         Tile(Modifier.fillMaxWidth().heightIn(min = 110.dp), onClick = a.openLocal) {
@@ -83,12 +87,12 @@ fun LibraryHub(
             }
         }
 
-        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(Seam)) {
             HubTile("favorites", "$favorites", "songs you starred", Modifier.weight(1f).fillMaxHeight()) { a.openList(ListKind.FAVORITES) }
             HubTile("most played", mostPlayedTop?.title ?: "—", if (mostPlayedTop != null) "top of the chart" else "nothing played yet",
                 Modifier.weight(1f).fillMaxHeight(), small = true) { a.openList(ListKind.MOST) }
         }
-        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(Seam)) {
             HubTile("history", "$historyCount", lastPlayed?.let { "last: ${it.title}" } ?: "recently played",
                 Modifier.weight(1f).fillMaxHeight()) { a.openList(ListKind.HISTORY) }
             HubTile("bookmarks", "$bookmarks", "youtube channels & playlists", Modifier.weight(1f).fillMaxHeight()) { a.openBookmarks() }
@@ -122,8 +126,9 @@ fun LibraryHub(
                 }
             }
         }
-        Spacer(Modifier.height(8.dp))
-    }
+        }
+        }
+}
 }
 
 @Composable
@@ -156,11 +161,14 @@ fun SongListScreen(
 ) {
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         ScreenHeader(title, model, onBack)
+        Panel(Modifier.fillMaxWidth().weight(1f)) {
+        Tile(Modifier.fillMaxWidth(), padding = 6.dp) {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             TextKey("play all", { if (songs.isNotEmpty()) onPlay(songs, 0) }, Modifier.weight(1f).height(38.dp), orange = true)
             TextKey("shuffle", { if (songs.isNotEmpty()) onPlay(songs.shuffled(), 0) }, Modifier.weight(1f).height(38.dp))
             TextKey("add all", { if (songs.isNotEmpty()) onAdd(songs) }, Modifier.weight(1f).height(38.dp))
             if (extraLabel != null && onExtra != null) TextKey(extraLabel, onExtra, Modifier.weight(1f).height(38.dp))
+        }
         }
         if (songs.isEmpty()) {
             Tile(Modifier.fillMaxWidth()) { Text(empty, style = K.body) }
@@ -172,7 +180,8 @@ fun SongListScreen(
                 )
             }
         }
-    }
+            }
+}
 }
 
 /** "5 min ago", "3 h ago", "2 d ago". */

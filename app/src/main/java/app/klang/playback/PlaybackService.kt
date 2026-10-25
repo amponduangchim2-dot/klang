@@ -324,7 +324,7 @@ class PlaybackService : MediaLibraryService() {
                 putInt("android.media.browse.CONTENT_STYLE_BROWSABLE_HINT", 1)
                 putInt("android.media.browse.CONTENT_STYLE_PLAYABLE_HINT", 1)
             }
-            return Futures.immediateFuture(LibraryResult.ofItem(folder(Ids.ROOT, "Klang"), LibraryParams.Builder().setExtras(extras).build()))
+            return Futures.immediateFuture(LibraryResult.ofItem(folder(Ids.ROOT, "Klang Audio"), LibraryParams.Builder().setExtras(extras).build()))
         }
 
         override fun onGetChildren(

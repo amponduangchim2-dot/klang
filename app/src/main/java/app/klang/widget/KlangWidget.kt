@@ -107,7 +107,7 @@ class KlangWidget : AppWidgetProvider() {
 
             // ---- text on the display, drawn in IBM Plex Sans Thai
             val (cleanArtist, cleanTitle) = if (rawTitle != null) app.klang.lyrics.LrcLib.clean(rawTitle, rawArtist) else ("" to "")
-            val title = if (rawTitle == null) "Klang" else cleanTitle.ifBlank { rawTitle }
+            val title = if (rawTitle == null) "Klang Audio" else cleanTitle.ifBlank { rawTitle }
             val artist = if (rawTitle == null) "press play to start" else cleanArtist.ifBlank { rawArtist }
             val dm = context.resources.displayMetrics
             val px = { dp: Float -> dp * dm.density }
@@ -116,7 +116,7 @@ class KlangWidget : AppWidgetProvider() {
             val textW = px(rightW - 10f - 6f - 18f).toInt().coerceAtLeast(40)
             val textH = px(lcdH - 10f - 6f - 10f).toInt().coerceAtLeast(20)
             v.setImageViewBitmap(R.id.w_text, lcdText(fonts, pal, playing, title, artist, textW, textH, px))
-            v.setContentDescription(R.id.w_text, "Klang, ${if (playing) "playing" else "paused"}: $title, $artist")
+            v.setContentDescription(R.id.w_text, "Klang Audio, ${if (playing) "playing" else "paused"}: $title, $artist")
 
             v.setOnClickPendingIntent(R.id.w_prev, mediaButton(context, KeyEvent.KEYCODE_MEDIA_PREVIOUS))
             v.setOnClickPendingIntent(R.id.w_play, mediaButton(context, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
@@ -176,7 +176,7 @@ class KlangWidget : AppWidgetProvider() {
             val stBase = px(9.5f)
             c.drawText(if (playing) "▶ PLAY" else "❚❚ PAUSE", 0f, stBase, st)
             val brand = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = f.bold; textSize = px(10.5f); color = pal.dim }
-            c.drawText("klang", w - brand.measureText("klang"), stBase, brand)
+            c.drawText("klang audio", w - brand.measureText("klang audio"), stBase, brand)
             val top = px(13f)
             val h = (fullH - top).toInt().coerceAtLeast(10)
             c.translate(0f, top)

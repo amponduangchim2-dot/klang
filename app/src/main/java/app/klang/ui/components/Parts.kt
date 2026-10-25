@@ -62,7 +62,7 @@ fun Tile(
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val shape = RoundedCornerShape(14.dp)
+    val shape = RoundedCornerShape(9.dp)
     var m = modifier.clip(shape).background(color, shape)
     if (onClick != null) m = m.clickable(onClick = onClick)
     Column(m.padding(padding), content = content)
@@ -138,6 +138,19 @@ fun Panel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> 
 fun PanelRow(modifier: Modifier = Modifier, height: Dp? = null, content: @Composable RowScope.() -> Unit) {
     Row(
         modifier.fillMaxWidth().then(if (height != null) Modifier.height(height) else Modifier.height(androidx.compose.foundation.layout.IntrinsicSize.Min)),
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Seam),
+        content = content
+    )
+}
+
+/**
+ * A row that shares out the panel's height ([fit], the face fits the screen) or has a fixed
+ * [height] (small screens, where the face scrolls).
+ */
+@Composable
+fun ColumnScope.FlexRow(fit: Boolean, weight: Float, height: Dp, content: @Composable RowScope.() -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().then(if (fit) Modifier.weight(weight) else Modifier.height(height)),
         horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(Seam),
         content = content
     )

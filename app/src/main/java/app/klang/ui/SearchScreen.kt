@@ -1,5 +1,7 @@
 package app.klang.ui
 
+import app.klang.ui.components.Seam
+import app.klang.ui.components.Panel
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -86,6 +88,7 @@ fun SearchScreen(s: SearchUi, skipNonMusic: Boolean, a: SearchActions, startTab:
 
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         ScreenHeader("search", "youtube", a.back)
+        Panel(Modifier.fillMaxWidth().weight(1f)) {
 
         // ---- search box
         Tile(Modifier.fillMaxWidth()) {
@@ -124,6 +127,7 @@ fun SearchScreen(s: SearchUi, skipNonMusic: Boolean, a: SearchActions, startTab:
             }
         }
 
+        Tile(Modifier.fillMaxWidth(), padding = 6.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Segmented(listOf("results", "bookmarks"), tab, { tab = it })
             Spacer(Modifier.weight(1f))
@@ -132,6 +136,7 @@ fun SearchScreen(s: SearchUi, skipNonMusic: Boolean, a: SearchActions, startTab:
                 Spacer(Modifier.width(6.dp))
                 TextKey("add all", a.addAll, Modifier.height(36.dp).width(76.dp))
             }
+        }
         }
 
         if (tab == 0) {
@@ -179,7 +184,8 @@ fun SearchScreen(s: SearchUi, skipNonMusic: Boolean, a: SearchActions, startTab:
                 }
             }
         }
-    }
+            }
+}
 }
 
 @Composable

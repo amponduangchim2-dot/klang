@@ -57,6 +57,7 @@ import app.klang.ui.components.OpGlyphKey
 import app.klang.ui.components.OpToggle
 import app.klang.ui.components.Panel
 import app.klang.ui.components.PanelRow
+import app.klang.ui.components.FlexRow
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 
@@ -92,14 +93,14 @@ class PlayerActions(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun PlayerScreen(ui: PlayerUi, sleepChoice: Int, sleepLeftMs: Long, libraryCount: Int, eqBands: List<Float>, eqPreset: String?, a: PlayerActions, big: Boolean = false) {
+fun PlayerScreen(ui: PlayerUi, sleepChoice: Int, sleepLeftMs: Long, libraryCount: Int, eqBands: List<Float>, eqPreset: String?, a: PlayerActions, big: Boolean = false, fit: Boolean = false) {
     var vis by rememberSaveable { mutableStateOf(VisMode.Spectrum) }
     var remaining by rememberSaveable { mutableStateOf(false) }
 
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(if (fit) Modifier.fillMaxSize() else Modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         // ---- header
-        Row(Modifier.padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("klang", style = K.wordmark)
+        Row(Modifier.padding(horizontal = 4.dp, vertical = 1.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("klang audio", style = K.wordmark)
             Spacer(Modifier.width(8.dp))
             Text("player 1", style = K.label.copy(fontSize = 12.sp))
             Spacer(Modifier.weight(1f))
@@ -109,7 +110,7 @@ fun PlayerScreen(ui: PlayerUi, sleepChoice: Int, sleepLeftMs: Long, libraryCount
         }
 
         // One face plate on a four-column grid; every module lines up with the ones above and below.
-        Panel(Modifier.fillMaxWidth()) {
+        Panel(Modifier.fillMaxWidth().then(if (fit) Modifier.weight(1f) else Modifier)) {
             // ---- speaker (1 column) + display (3 columns)
             PanelRow {
                 Cell(Modifier.weight(1f).fillMaxHeight(), padding = 6.dp) {
@@ -164,16 +165,10 @@ fun PlayerScreen(ui: PlayerUi, sleepChoice: Int, sleepLeftMs: Long, libraryCount
 
             // ---- position (4 columns)
             PanelRow {
-                Cell(Modifier.weight(1f)) {
+                Cell(Modifier.weight(1f), padding = 8.dp) {
                     LabelRow("position", "${formatTime(ui.positionMs)} / ${formatTime(ui.durationMs)}")
-                    Spacer(Modifier.height(6.dp))
-                    Box(
-                        Modifier
-                            .background(K.line, RoundedCornerShape(10.dp))
-                            .padding(1.dp)
-                            .background(K.shell, RoundedCornerShape(9.dp))
-                            .padding(3.dp)
-                    ) {
+                    Spacer(Modifier.height(2.dp))
+                    Box {
                         TuningScale(
                             progress = if (ui.durationMs > 0) ui.positionMs.toFloat() / ui.durationMs else 0f,
                             durationMs = ui.durationMs.coerceAtLeast(60_000L),
@@ -186,9 +181,8 @@ fun PlayerScreen(ui: PlayerUi, sleepChoice: Int, sleepLeftMs: Long, libraryCount
             }
 
             // ---- transport: four OP-1 keys
-            val keyH = if (big) 104.dp else 74.dp
             val ic = if (big) 26.dp else 18.dp
-            PanelRow(height = keyH) {
+            FlexRow(fit, if (big) 1.4f else 0.85f, if (big) 104.dp else 72.dp) {
                 listOf(
                     Triple(Glyph.Prev, a.previous, "Previous"),
                     Triple(if (ui.isPlaying) Glyph.Pause else Glyph.Play, a.togglePlay, if (ui.isPlaying) "Pause" else "Play"),
@@ -202,7 +196,7 @@ fun PlayerScreen(ui: PlayerUi, sleepChoice: Int, sleepLeftMs: Long, libraryCount
             }
 
             // ---- volume | balance | shuffle · repeat · eq
-            PanelRow(height = 112.dp) {
+            FlexRow(fit, 1.15f, 104.dp) {
                 Cell(Modifier.weight(1f).fillMaxHeight(), padding = 8.dp) {
                     LabelRow("vol", (ui.volume * 100).toInt().toString())
                     Knob(
@@ -235,20 +229,20 @@ fun PlayerScreen(ui: PlayerUi, sleepChoice: Int, sleepLeftMs: Long, libraryCount
             }
 
             // ---- equalizer | playlist (2 + 2 columns)
-            PanelRow {
-                Cell(Modifier.weight(1f).fillMaxHeight(), onClick = { a.open(Screen.Eq) }) {
+            FlexRow(fit, 0.95f, 92.dp) {
+                Cell(Modifier.weight(1f).fillMaxHeight(), padding = 8.dp, onClick = { a.open(Screen.Eq) }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("equalizer", style = K.label, modifier = Modifier.weight(1f)); Lamp(ui.eqOn)
                     }
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.weight(1f))
                     MiniEqBars(eqBands, ui.eqOn)
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.weight(1f))
                     Text(
                         if (!ui.eqOn) "off" else (eqPreset ?: "custom"),
                         style = K.lcd(eqPreset ?: "", K.label), maxLines = 1, overflow = TextOverflow.Ellipsis
                     )
                 }
-                Cell(Modifier.weight(1f).fillMaxHeight(), onClick = { a.open(Screen.Queue) }) {
+                Cell(Modifier.weight(1f).fillMaxHeight(), padding = 8.dp, onClick = { a.open(Screen.Queue) }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("playlist", style = K.label, modifier = Modifier.weight(1f)); Lamp(ui.count > 0)
                     }
@@ -271,12 +265,12 @@ fun PlayerScreen(ui: PlayerUi, sleepChoice: Int, sleepLeftMs: Long, libraryCount
                 ToolSpec("options", Glyph.Options, null) { a.open(Screen.Options) },
             )
             tools.chunked(4).forEach { row ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    row.forEach { t -> ToolTile(t, Modifier.weight(1f)) }
+                FlexRow(fit, 0.9f, 80.dp) {
+                    row.forEach { t -> ToolTile(t, Modifier.weight(1f).fillMaxHeight()) }
                 }
             }
         }
-        Spacer(Modifier.height(8.dp))
+        if (!fit) Spacer(Modifier.height(8.dp))
     }
 }
 
@@ -290,7 +284,7 @@ class ToolSpec(val name: String, val glyph: Glyph, val sub: String?, val active:
 
 @Composable
 private fun ToolTile(t: ToolSpec, modifier: Modifier) {
-    Cell(modifier.aspectRatio(1f, matchHeightConstraintsFirst = false), onClick = t.onClick) {
+    Cell(modifier, padding = 8.dp, onClick = t.onClick) {
         OutlineIcon(t.glyph, color = if (t.active) K.orange else K.ink)
         Spacer(Modifier.weight(1f))
         Text(t.name, style = K.name, maxLines = 1)

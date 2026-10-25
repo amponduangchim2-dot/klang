@@ -1,5 +1,6 @@
 package app.klang.ui
 
+import app.klang.ui.components.Seam
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -122,8 +123,9 @@ fun PlaylistScreen(
     val selected = queue.filter { it.key in selection }
     val one = selected.singleOrNull()
 
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         ScreenHeader("current playlist", listName, a.back)
+        Panel(Modifier.fillMaxWidth().weight(1f)) {
 
         // ---- list on the LCD
         Tile(Modifier.fillMaxWidth().weight(1f), padding = 8.dp) {
@@ -245,7 +247,7 @@ fun PlaylistScreen(
         }
 
         // ---- mini player
-        Panel(Modifier.fillMaxWidth()) {
+        run {
             PanelRow(height = 66.dp) {
                 Cell(Modifier.width(66.dp).fillMaxHeight(), padding = 0.dp) {
                     OpGlyphKey(Glyph.Prev, a.previous, Modifier.fillMaxSize(), description = "Previous")
@@ -262,7 +264,8 @@ fun PlaylistScreen(
                 }
             }
         }
-    }
+            }
+}
 
     // ---- dialogs
     when (val d = dialog) {

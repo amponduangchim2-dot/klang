@@ -1,5 +1,7 @@
 package app.klang.ui
 
+import app.klang.ui.components.Seam
+import app.klang.ui.components.Panel
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -61,6 +63,7 @@ fun LyricsScreen(
 
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         ScreenHeader("lyrics", "lrclib", onBack)
+        Panel(Modifier.fillMaxWidth().weight(1f)) {
 
         Tile(Modifier.fillMaxWidth()) {
             Text(ui.title.ifBlank { "nothing playing" }, style = K.lcd(ui.title, K.name), maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -100,9 +103,12 @@ fun LyricsScreen(
             }
         }
         lyrics.source?.let {
-            Text("from lrclib.net · $it", style = K.lcd(it, K.label.copy(fontSize = 11.sp)), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 4.dp))
+            Tile(Modifier.fillMaxWidth(), padding = 8.dp) {
+                Text("from lrclib.net · $it", style = K.lcd(it, K.label.copy(fontSize = 11.sp)), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
-    }
+            }
+}
 }
 
 @Composable

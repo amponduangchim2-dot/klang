@@ -1,5 +1,7 @@
 package app.klang.ui
 
+import app.klang.ui.components.Seam
+import app.klang.ui.components.Panel
 import android.graphics.Bitmap
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -45,12 +47,14 @@ import app.klang.ui.components.Tile
 @Composable
 fun SkinsScreen(current: String, onPick: (String) -> Unit, onBack: () -> Unit) {
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         ScreenHeader("skins", "${Skins.all.size} finishes", onBack)
+        Panel(Modifier.fillMaxWidth().weight(1f, fill = false)) {
+        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Seam)) {
         Skins.all.chunked(2).forEach { row ->
-            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(Seam)) {
                 row.forEach { s ->
                     val on = s.id == current
                     Tile(
@@ -70,11 +74,12 @@ fun SkinsScreen(current: String, onPick: (String) -> Unit, onBack: () -> Unit) {
                 if (row.size == 1) Spacer(Modifier.weight(1f))
             }
         }
-        Text(
-            "Skins change the colours of the whole app. The layout and the controls stay the same.",
-            style = K.label, modifier = Modifier.padding(horizontal = 4.dp)
-        )
-    }
+        Tile(Modifier.fillMaxWidth()) {
+            Text("Skins change the colours of the whole app. The layout and the controls stay the same.", style = K.label)
+        }
+            }
+        }
+}
 }
 
 /** Miniature of the player face drawn in the skin's own colours. */
@@ -134,13 +139,16 @@ fun ShareScreen(
 ) {
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         ScreenHeader("share", "now playing", onBack)
+        Panel(Modifier.fillMaxWidth().weight(1f)) {
         if (!hasSong) {
             Tile(Modifier.fillMaxWidth()) { Text("Play a song first, then share it from here.", style = K.body) }
-            return@Column
+            return@Panel
         }
+        Tile(Modifier.fillMaxWidth(), padding = 6.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Segmented(listOf("square", "story 9:16"), formatIndex, onFormat)
             Spacer(Modifier.weight(1f))
+        }
         }
         Tile(Modifier.fillMaxWidth().weight(1f), padding = 8.dp) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -153,12 +161,15 @@ fun ShareScreen(
                 } else Text("drawing…", style = K.label)
             }
         }
+        Tile(Modifier.fillMaxWidth(), padding = 6.dp) {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             TextKey("share card", shareImage, Modifier.weight(1.3f).height(44.dp), orange = true)
             TextKey("share text", shareText, Modifier.weight(1f).height(44.dp))
             if (link != null) TextKey("copy link", copyLink, Modifier.weight(1f).height(44.dp))
         }
-    }
+        }
+            }
+}
 }
 
 // ------------------------------------------------------------------ options
@@ -179,10 +190,12 @@ class OptionsActions(
 @Composable
 fun OptionsScreen(o: OptionsUi, skipTalk: Boolean, a: OptionsActions) {
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         ScreenHeader("options", "settings", a.back)
+        Panel(Modifier.fillMaxWidth().weight(1f, fill = false)) {
+        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Seam)) {
 
         Tile(Modifier.fillMaxWidth()) {
             Text("playback", style = K.label)
@@ -226,7 +239,7 @@ fun OptionsScreen(o: OptionsUi, skipTalk: Boolean, a: OptionsActions) {
             Text("about", style = K.label)
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.Bottom) {
-                Text("klang", style = K.wordmark)
+                Text("klang audio", style = K.wordmark)
                 Spacer(Modifier.width(8.dp))
                 Text("version ${o.versionName} (${o.versionCode})", style = K.value, modifier = Modifier.padding(bottom = 3.dp))
             }
@@ -244,7 +257,7 @@ fun OptionsScreen(o: OptionsUi, skipTalk: Boolean, a: OptionsActions) {
             }
             Spacer(Modifier.height(12.dp))
             Text(
-                "Klang is a music player in the spirit of Winamp and Droidamp, with a face inspired by Dieter Rams' work for Braun.",
+                "Klang Audio is a music player in the spirit of Winamp and Droidamp, with a face inspired by Braun and the OP-1.",
                 style = K.body.copy(fontSize = 13.sp, color = K.ink2)
             )
             Spacer(Modifier.height(8.dp))
@@ -253,8 +266,9 @@ fun OptionsScreen(o: OptionsUi, skipTalk: Boolean, a: OptionsActions) {
             Spacer(Modifier.height(8.dp))
             TextKey("source code on github", a.openSource, Modifier.fillMaxWidth().height(38.dp))
         }
-        Spacer(Modifier.height(8.dp))
-    }
+        }
+        }
+}
 }
 
 @Composable

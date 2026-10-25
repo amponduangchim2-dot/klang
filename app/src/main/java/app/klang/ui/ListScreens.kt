@@ -1,5 +1,9 @@
 package app.klang.ui
 
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.IntrinsicSize
+import app.klang.ui.components.Seam
+import app.klang.ui.components.Panel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -109,20 +113,22 @@ fun LibraryScreen(
 ) {
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         ScreenHeader("local music", if (addMode) "tap a song to add it" else "library", onBack)
+        Panel(Modifier.fillMaxWidth().weight(1f)) {
         if (!hasPermission) {
             Tile(Modifier.fillMaxWidth()) {
-                Text("Klang needs permission to see the music on this phone.", style = K.body)
+                Text("Klang Audio needs permission to see the music on this phone.", style = K.body)
                 Spacer(Modifier.height(10.dp))
                 TextKey("allow access", onAskPermission, Modifier.fillMaxWidth().height(44.dp), orange = true)
             }
-            return@Column
+            return@Panel
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Tile(Modifier.weight(1f)) {
+        Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(Seam)) {
+            Tile(Modifier.weight(1f).fillMaxHeight()) {
                 Text("songs on this phone", style = K.label)
                 Text("${songs.size}", style = K.value.copy(fontSize = 22.sp))
             }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Tile(Modifier.weight(1f).fillMaxHeight(), padding = 8.dp) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (addMode) {
                     TextKey("add all", { onAdd(songs) }, Modifier.fillMaxWidth().height(36.dp), orange = true)
                     TextKey("done", onBack, Modifier.fillMaxWidth().height(36.dp))
@@ -130,6 +136,7 @@ fun LibraryScreen(
                     TextKey("play all", { onPlay(songs, 0) }, Modifier.fillMaxWidth().height(36.dp), orange = true)
                     TextKey("shuffle all", onShuffleAll, Modifier.fillMaxWidth().height(36.dp))
                 }
+            }
             }
         }
         if (songs.isEmpty()) {
@@ -139,5 +146,6 @@ fun LibraryScreen(
                 SongLcdList(songs, currentUri, { if (addMode) onAdd(listOf(songs[it])) else onPlay(songs, it) }, Modifier.fillMaxSize())
             }
         }
-    }
+            }
+}
 }

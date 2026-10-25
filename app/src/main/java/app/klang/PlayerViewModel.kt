@@ -869,7 +869,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         val ui = _ui.value
         if (!ui.hasMedia || ui.title.isBlank()) return null
         val line = if (ui.artist.isNotBlank()) "${ui.artist} – ${ui.title}" else ui.title
-        return listOfNotNull("♪ $line", currentLink(), "playing on Klang").joinToString("\n")
+        return listOfNotNull("♪ $line", currentLink(), "playing on Klang Audio").joinToString("\n")
     }
 
     fun checkForUpdate() {
@@ -902,7 +902,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                 onSuccess = { (code, name, url) ->
                     when {
                         code == null -> UpdateUi(message = "Could not tell which version is online.", downloadUrl = url)
-                        code > cur -> UpdateUi(message = "Klang ${name ?: ""} is available.".replace("  ", " "), downloadUrl = url)
+                        code > cur -> UpdateUi(message = "Klang Audio ${name ?: ""} is available.".replace("  ", " "), downloadUrl = url)
                         else -> UpdateUi(message = "You have the newest version.")
                     }
                 },
@@ -1071,7 +1071,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             }
             YouTube.isPlaylistLink(url) -> importYouTubePlaylist(url)
             YouTube.isChannelLink(url) -> addBookmark(url)
-            else -> _message.value = "Klang doesn't understand that link."
+            else -> _message.value = "Klang Audio doesn't understand that link."
         }
     }
 

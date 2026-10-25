@@ -1,5 +1,7 @@
 package app.klang.ui
 
+import app.klang.ui.components.Seam
+import app.klang.ui.components.Panel
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -68,6 +70,7 @@ fun EqScreen(eq: EqUi, a: EqActions) {
 
     Column(verticalArrangement = Arrangement.spacedBy(gap)) {
         ScreenHeader("equalizer", "eq 1 · 10 band", a.back)
+        Panel(Modifier.fillMaxWidth()) {
 
         // ---- curve LCD
         Tile {
@@ -108,7 +111,7 @@ fun EqScreen(eq: EqUi, a: EqActions) {
             }
             if (eq.auto) {
                 Spacer(Modifier.height(6.dp))
-                Text("auto: Klang remembers the curve for each track and loads it next time that track plays.", style = K.label)
+                Text("auto: Klang Audio remembers the curve for each track and loads it next time that track plays.", style = K.label)
             }
         }
 
@@ -196,15 +199,15 @@ fun EqScreen(eq: EqUi, a: EqActions) {
             LabelRow("other equalizer apps", null)
             Spacer(Modifier.height(4.dp))
             Text(
-                "Klang tells equalizer apps such as Wavelet, Equalizer FX or JamesDSP when it plays, so they can work on its sound. " +
+                "Klang Audio tells equalizer apps such as Wavelet, Equalizer FX or JamesDSP when it plays, so they can work on its sound. " +
                     "If you use one, turn Klang's own EQ off so the two do not add up.",
                 style = K.body.copy(fontSize = 13.sp, color = K.ink2)
             )
             Spacer(Modifier.height(8.dp))
             TextKey("open equalizer app", a.external, Modifier.fillMaxWidth().height(40.dp))
         }
-        Spacer(Modifier.height(8.dp))
-    }
+        }
+}
 
     when (dialog) {
         "save" -> NameDialog(

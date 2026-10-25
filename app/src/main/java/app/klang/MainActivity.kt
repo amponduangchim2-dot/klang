@@ -80,7 +80,7 @@ class MainActivity : ComponentActivity() {
         val send = Intent(Intent.ACTION_SEND).apply {
             type = "application/octet-stream"
             putExtra(Intent.EXTRA_STREAM, uri)
-            putExtra(Intent.EXTRA_TEXT, "${file.nameWithoutExtension}: a Winamp EQ preset. Open it with Klang or Winamp.")
+            putExtra(Intent.EXTRA_TEXT, "${file.nameWithoutExtension}: a Winamp EQ preset. Open it with Klang Audio or Winamp.")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         startActivity(Intent.createChooser(send, "Share preset"))
@@ -335,7 +335,7 @@ class MainActivity : ComponentActivity() {
                     importM3u = { m3uLauncher.launch(arrayOf("audio/x-mpegurl", "audio/mpegurl", "application/x-mpegurl", "application/vnd.apple.mpegurl", "*/*")) },
                     shareM3u = {
                         vm.playlistFileForSharing()?.let { f ->
-                            shareFile(f, "audio/x-mpegurl", "${f.nameWithoutExtension}: a playlist. Open it with Klang or Winamp.", "Share playlist")
+                            shareFile(f, "audio/x-mpegurl", "${f.nameWithoutExtension}: a playlist. Open it with Klang Audio or Winamp.", "Share playlist")
                         }
                     },
                     shareLinks = { shareText(vm.playlistLinksText(), "Share playlist") },
@@ -355,11 +355,16 @@ class MainActivity : ComponentActivity() {
                     .fillMaxSize()
                     .background(K.shell)
                     .windowInsetsPadding(WindowInsets.safeDrawing)
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .padding(horizontal = 8.dp, vertical = 6.dp)
             ) {
                 when (screen) {
-                    Screen.Player -> Box(Modifier.verticalScroll(rememberScrollState())) {
-                        PlayerScreen(ui, sleep, sleepLeft, songs.size, eq.bands, eq.presetName, actions, big = options.bigControls)
+                    Screen.Player -> androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+                        // Tall enough: the whole face fits the screen. Small phones: it scrolls.
+                        if (maxHeight >= 660.dp) {
+                            PlayerScreen(ui, sleep, sleepLeft, songs.size, eq.bands, eq.presetName, actions, big = options.bigControls, fit = true)
+                        } else Box(Modifier.verticalScroll(rememberScrollState())) {
+                            PlayerScreen(ui, sleep, sleepLeft, songs.size, eq.bands, eq.presetName, actions, big = options.bigControls)
+                        }
                     }
                     Screen.Library -> LibraryScreen(
                         songs = songs,
@@ -500,7 +505,7 @@ class MainActivity : ComponentActivity() {
                             copyLink = {
                                 vm.currentLink()?.let { l ->
                                     val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                    cm.setPrimaryClip(android.content.ClipData.newPlainText("Klang link", l))
+                                    cm.setPrimaryClip(android.content.ClipData.newPlainText("Klang Audio link", l))
                                     Toast.makeText(this@MainActivity, "Link copied", Toast.LENGTH_SHORT).show()
                                 }
                             },
