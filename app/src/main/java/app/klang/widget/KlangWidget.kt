@@ -184,27 +184,43 @@ class KlangWidget : AppWidgetProvider() {
             val ap = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
                 typeface = if (thai(artist)) f.regular else Typeface.MONOSPACE; textSize = sp(px, 11f); color = pal.dim
             }
-            // fit: two title lines if there is room, else one; shrink the title a little before dropping the artist
+            // Lines are placed by hand: Plex Thai reports very tall line boxes (1.65 em), which wastes the small LCD.
+            // Title: two lines if there is room, else one; shrink a little before dropping the artist.
             var size = 13.5f
-            var titleL: StaticLayout
-            var artistL: StaticLayout?
+            var lines: List<String>
+            var showArtist: Boolean
+            fun titleLines(n: Int): List<String> {
+                val l = layout(title, tp, w, n)
+                return (0 until l.lineCount).map { i ->
+                    val raw = title.substring(l.getLineStart(i), l.getLineEnd(i)).trimEnd()
+                    if (i == l.lineCount - 1 && l.getEllipsisCount(i) > 0) TextUtils.ellipsize(title.substring(l.getLineStart(i)), tp, w.toFloat(), TextUtils.TruncateAt.END).toString() else raw
+                }
+            }
+            fun blockH(n: Int, artistOn: Boolean): Float {
+                val t = tp.textSize
+                val a = ap.textSize
+                return t * (1.0f + 1.28f * (n - 1)) + t * 0.3f + if (artistOn) a * 0.2f + a * 1.3f else 0f
+            }
             while (true) {
                 tp.textSize = sp(px, size)
                 ap.textSize = sp(px, (size * 0.82f).coerceAtLeast(10f))
-                artistL = if (artist.isNotBlank()) layout(artist, ap, w, 1) else null
-                val artistH = artistL?.height ?: 0
-                val two = layout(title, tp, w, 2)
-                val one = layout(title, tp, w, 1)
-                titleL = if (two.lineCount > 1 && two.height + artistH <= h) two else one
-                if (titleL.height + artistH <= h || size <= 11.5f) break
+                val artistOn = artist.isNotBlank()
+                val two = titleLines(2)
+                lines = if (two.size > 1 && blockH(2, artistOn) <= h) two else titleLines(1)
+                showArtist = artistOn && blockH(lines.size, true) <= h
+                if (showArtist || !artistOn || size <= 11.5f) break
                 size -= 0.5f
             }
-            if (artistL != null && titleL.height + artistL.height > h) artistL = null
-            val total = titleL.height + (artistL?.height ?: 0)
-            var y = ((h - total) / 2f).coerceAtLeast(0f)
-            c.save(); c.translate(0f, y); titleL.draw(c); c.restore()
-            y += titleL.height
-            if (artistL != null) { c.save(); c.translate(0f, y); artistL.draw(c); c.restore() }
+            val total = blockH(lines.size, showArtist)
+            var base = ((h - total) / 2f).coerceAtLeast(0f) + tp.textSize * 1.0f
+            lines.forEachIndexed { i, line ->
+                c.drawText(line, 0f, base, tp)
+                if (i < lines.size - 1) base += tp.textSize * 1.28f
+            }
+            if (showArtist) {
+                base += tp.textSize * 0.3f + ap.textSize * 0.2f + ap.textSize * 1.0f
+                c.drawText(TextUtils.ellipsize(artist, ap, w.toFloat(), TextUtils.TruncateAt.END).toString(), 0f, base, ap)
+            }
             return bmp
         }
 
