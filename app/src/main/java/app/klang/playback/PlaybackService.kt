@@ -144,7 +144,6 @@ class PlaybackService : MediaLibraryService() {
         session = MediaLibrarySession.Builder(context, player, LibraryCallback())
             .setSessionActivity(sessionActivity)
             .build()
-        refreshButtons()
         handler.post(volumeLoop)
         handler.postDelayed(saveLoop, 10_000)
     }
@@ -179,7 +178,6 @@ class PlaybackService : MediaLibraryService() {
                 val md = player.mediaMetadata
                 KlangWidget.update(this@PlaybackService, md.title?.toString().orEmpty(), md.artist?.toString().orEmpty(), player.isPlaying)
             }
-            if (events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED, Player.EVENT_REPEAT_MODE_CHANGED)) refreshButtons()
             if (events.containsAny(Player.EVENT_TIMELINE_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION) ||
                 (events.contains(Player.EVENT_IS_PLAYING_CHANGED) && !player.isPlaying)) saveQueue(player)
         }
@@ -259,7 +257,6 @@ class PlaybackService : MediaLibraryService() {
                     .setIsBrowsable(true)
                     .setIsPlayable(false)
                     .setMediaType(if (playlists) MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS else MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
-                    .setArtworkUri(Covers.folderUri(if (id.startsWith(Ids.LIST)) "lists" else id))
                     .build()
             )
             .build()
@@ -276,7 +273,6 @@ class PlaybackService : MediaLibraryService() {
                     .setIsPlayable(true)
                     .setIsBrowsable(false)
                     .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
-                    .setArtworkUri(Covers.songUri(s))
                     .build()
             )
             .build()
@@ -285,9 +281,9 @@ class PlaybackService : MediaLibraryService() {
 
     /** Songs in a folder. Runs on the I/O thread, except the queue which reads the player. */
     private fun songsOf(parent: String): List<Pair<Song, String?>> = when {
-        parent == Ids.FAVORITES -> LibraryStore.get(this).favorites().map { it to null }
-        parent == Ids.MOST -> LibraryStore.get(this).mostPlayed(100).map { (s, n) -> s to "${s.artist.ifBlank { "" }}  ·  played $n×".trim(' ', '·') }
-        parent == Ids.HISTORY -> LibraryStore.get(this).history(100).map { it.first to null }
+        parent == Ids.FAVORITES -> LibraryStore(this).favorites().map { it to null }
+        parent == Ids.MOST -> LibraryStore(this).mostPlayed(100).map { (s, n) -> s to "${s.artist.ifBlank { "" }}  ·  played $n×".trim(' ', '·') }
+        parent == Ids.HISTORY -> LibraryStore(this).history(100).map { it.first to null }
         parent == Ids.LOCAL -> localSongs().sortedBy { it.title.lowercase() }.take(1500).map { it to null }
         parent.startsWith(Ids.LIST) -> {
             val text = SavedLists(this).read(parent.removePrefix(Ids.LIST))
@@ -311,120 +307,21 @@ class PlaybackService : MediaLibraryService() {
         val q = query.trim().lowercase()
         if (q.isEmpty()) return emptyList()
         val words = q.split(Regex("\\s+"))
-        val pool = (LibraryStore.get(this).favorites() + LibraryStore.get(this).history(200).map { it.first } + localSongs()).distinctBy { it.uri }
+        val pool = (LibraryStore(this).favorites() + LibraryStore(this).history(200).map { it.first } + localSongs()).distinctBy { it.uri }
         return pool.filter { s ->
             val hay = "${s.title} ${s.artist} ${s.album}".lowercase()
             words.all { it in hay }
         }.take(200)
     }
 
-    // ------------------------------------------------------------------ car buttons (Android Auto now playing)
-
-    private object Cmd {
-        const val FAV = "klang.favorite"
-        const val SHUFFLE = "klang.shuffle"
-        const val REPEAT = "klang.repeat"
-        const val EQ = "klang.eq"
-        val all = listOf(FAV, SHUFFLE, REPEAT, EQ)
-    }
-
-    private val prefs by lazy { getSharedPreferences("klang", MODE_PRIVATE) }
-
-    private fun isFavorite(uri: String?) = uri != null && uri in prefs.getStringSet("favorites", emptySet())!!
-
-    private fun button(cmd: String, name: String, icon: Int) =
-        androidx.media3.session.CommandButton.Builder()
-            .setDisplayName(name)
-            .setIconResId(icon)
-            .setSessionCommand(androidx.media3.session.SessionCommand(cmd, Bundle.EMPTY))
-            .build()
-
-    private fun buttons(): List<androidx.media3.session.CommandButton> {
-        val p = session?.player
-        val fav = isFavorite(p?.currentMediaItem?.mediaId)
-        val eqName = prefs.getString("eqPreset", null)?.takeIf { AudioEngine.eqEnabled } ?: "off"
-        return listOf(
-            button(Cmd.FAV, if (fav) "Remove from favorites" else "Add to favorites", if (fav) app.klang.R.drawable.aa_heart_on else app.klang.R.drawable.aa_heart),
-            button(Cmd.SHUFFLE, if (p?.shuffleModeEnabled == true) "Shuffle on" else "Shuffle off", if (p?.shuffleModeEnabled == true) app.klang.R.drawable.aa_shuffle_on else app.klang.R.drawable.aa_shuffle),
-            button(Cmd.REPEAT, when (p?.repeatMode) { Player.REPEAT_MODE_ALL -> "Repeat all"; Player.REPEAT_MODE_ONE -> "Repeat one"; else -> "Repeat off" },
-                when (p?.repeatMode) { Player.REPEAT_MODE_ALL -> app.klang.R.drawable.aa_repeat_on; Player.REPEAT_MODE_ONE -> app.klang.R.drawable.aa_repeat_one; else -> app.klang.R.drawable.aa_repeat }),
-            button(Cmd.EQ, "EQ $eqName", app.klang.R.drawable.aa_eq),
-        )
-    }
-
-    private fun refreshButtons() {
-        session?.setCustomLayout(com.google.common.collect.ImmutableList.copyOf(buttons()))
-    }
-
-    private fun toggleFavorite() {
-        val p = session?.player ?: return
-        val item = p.currentMediaItem ?: return
-        val song = Items.toSong(item, p.currentMediaItemIndex)
-        val set = prefs.getStringSet("favorites", emptySet())!!.toMutableSet()
-        val on = song.uri !in set
-        if (on) set += song.uri else set -= song.uri
-        prefs.edit().putStringSet("favorites", set).apply()
-        io.execute { LibraryStore.get(this).setFavorite(song, on) }
-    }
-
-    /** Steps through the four quick presets (Flat, Rock, Pop, Full Bass), like the 1–4 keys. */
-    private fun nextEqPreset() {
-        val quick = app.klang.eq.BuiltInPresets.quick
-        val cur = prefs.getString("eqPreset", null)
-        val i = quick.indexOfFirst { it.equals(cur, true) }
-        val preset = app.klang.eq.BuiltInPresets.byName(quick[(i + 1) % quick.size]) ?: return
-        AudioEngine.eqEnabled = true
-        AudioEngine.setAllGains(preset.bands.toFloatArray())
-        AudioEngine.preampDb = preset.preamp
-        prefs.edit().apply {
-            preset.bands.forEachIndexed { k, v -> putFloat("eq$k", v) }
-            putFloat("preamp", preset.preamp)
-            putString("eqPreset", preset.name)
-            putBoolean("eqOn", true)
-        }.apply()
-    }
-
     private inner class LibraryCallback : MediaLibrarySession.Callback {
-
-        override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
-            val cmds = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon().apply {
-                Cmd.all.forEach { add(androidx.media3.session.SessionCommand(it, Bundle.EMPTY)) }
-            }.build()
-            return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
-                .setAvailableSessionCommands(cmds)
-                .build()
-        }
-
-        override fun onPostConnect(session: MediaSession, controller: MediaSession.ControllerInfo) {
-            session.setCustomLayout(controller, com.google.common.collect.ImmutableList.copyOf(buttons()))
-        }
-
-        override fun onCustomCommand(
-            session: MediaSession, controller: MediaSession.ControllerInfo,
-            customCommand: androidx.media3.session.SessionCommand, args: Bundle,
-        ): ListenableFuture<androidx.media3.session.SessionResult> {
-            val p = session.player
-            when (customCommand.customAction) {
-                Cmd.FAV -> toggleFavorite()
-                Cmd.SHUFFLE -> p.shuffleModeEnabled = !p.shuffleModeEnabled
-                Cmd.REPEAT -> p.repeatMode = when (p.repeatMode) {
-                    Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
-                    Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
-                    else -> Player.REPEAT_MODE_OFF
-                }
-                Cmd.EQ -> nextEqPreset()
-                else -> return Futures.immediateFuture(androidx.media3.session.SessionResult(androidx.media3.session.SessionResult.RESULT_ERROR_NOT_SUPPORTED))
-            }
-            refreshButtons()
-            return Futures.immediateFuture(androidx.media3.session.SessionResult(androidx.media3.session.SessionResult.RESULT_SUCCESS))
-        }
 
         override fun onGetLibraryRoot(
             session: MediaLibrarySession, browser: MediaSession.ControllerInfo, params: LibraryParams?,
         ): ListenableFuture<LibraryResult<MediaItem>> {
             val extras = Bundle().apply {
                 putBoolean("android.media.browse.SEARCH_SUPPORTED", true)
-                putInt("android.media.browse.CONTENT_STYLE_BROWSABLE_HINT", 2)
+                putInt("android.media.browse.CONTENT_STYLE_BROWSABLE_HINT", 1)
                 putInt("android.media.browse.CONTENT_STYLE_PLAYABLE_HINT", 1)
             }
             return Futures.immediateFuture(LibraryResult.ofItem(folder(Ids.ROOT, "Klang Audio"), LibraryParams.Builder().setExtras(extras).build()))

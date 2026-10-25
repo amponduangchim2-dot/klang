@@ -22,7 +22,6 @@ object Items {
                 .setIsPlayable(true)
                 .setIsBrowsable(false)
                 .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
-                .setArtworkUri(Covers.songUri(s))
                 .setExtras(Bundle().apply {
                     putLong("id", s.id)
                     putLong("d", s.durationMs)

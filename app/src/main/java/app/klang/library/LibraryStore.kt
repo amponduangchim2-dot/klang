@@ -10,14 +10,7 @@ import java.io.File
  * Song details are kept too, so favorites and history also work for YouTube tracks.
  * Stored as one small JSON file in the app's private storage.
  */
-class LibraryStore private constructor(context: Context) {
-    companion object {
-        @Volatile private var instance: LibraryStore? = null
-        /** One store per process, shared by the screen and the player service (car, widget). */
-        fun get(context: Context): LibraryStore =
-            instance ?: synchronized(this) { instance ?: LibraryStore(context.applicationContext).also { instance = it } }
-    }
-
+class LibraryStore(context: Context) {
     private val file = File(context.filesDir, "library.json")
 
     private class Meta(var song: Song, var plays: Int = 0, var last: Long = 0L, var fav: Boolean = false, var favAt: Long = 0L)

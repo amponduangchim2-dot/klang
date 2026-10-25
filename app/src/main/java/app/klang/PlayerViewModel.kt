@@ -185,7 +185,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private val _options = MutableStateFlow(OptionsUi())
     val options: StateFlow<OptionsUi> = _options
 
-    private val store = LibraryStore.get(app)
+    private val store = LibraryStore(app)
     private val _lists = MutableStateFlow(LibraryLists())
     val lists: StateFlow<LibraryLists> = _lists
     private var countedKey: Long? = null
@@ -241,7 +241,6 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             mine = loadMine(),
         )
         _favorites.value = prefs.getStringSet("favorites", emptySet())!!.toSet() + store.favoriteUris()
-        prefs.edit().putStringSet("favorites", _favorites.value).apply()
         refreshLists()
         _skipNonMusic.value = prefs.getBoolean("skipNonMusic", true)
         _search.value = SearchUi(history = loadHistory(), bookmarks = loadBookmarks())
@@ -255,7 +254,6 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                 skipSegmentsIfNeeded()
                 countPlayIfNeeded()
                 if (++tick % 20 == 0) saveQueueState()
-                if (tick % 8 == 0) syncFromService()
                 delay(250)
             }
         }
@@ -753,22 +751,6 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         val s = currentSong() ?: run { _message.value = "Play a song first"; return }
         toggleFavorite(s.uri)
         _message.value = if (s.uri in _favorites.value) "Added to favorites" else "Removed from favorites"
-    }
-
-    private var seenEqVersion = -1
-
-    /** Picks up changes made from the car or the widget (favorites, EQ preset). */
-    private fun syncFromService() {
-        val favs = prefs.getStringSet("favorites", emptySet())!!.toSet()
-        if (favs != _favorites.value) { _favorites.value = favs; refreshLists() }
-        if (AudioEngine.version != seenEqVersion) {
-            seenEqVersion = AudioEngine.version
-            val bands = List(AudioEngine.BAND_COUNT) { AudioEngine.gainDb(it) }
-            if (bands != _eq.value.bands || AudioEngine.preampDb != _eq.value.preamp || AudioEngine.eqEnabled != _eq.value.on) {
-                _eq.value = _eq.value.copy(bands = bands, preamp = AudioEngine.preampDb, on = AudioEngine.eqEnabled, presetName = prefs.getString("eqPreset", null))
-                _ui.value = _ui.value.copy(eqOn = AudioEngine.eqEnabled)
-            }
-        }
     }
 
     // ---- library: plays, history, favorites ----

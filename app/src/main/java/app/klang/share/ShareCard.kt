@@ -143,7 +143,7 @@ object ShareCard {
     }
 
     /** Flat graphic record: black disc, a few fine grooves, red label with a white wedge. */
-    internal fun drawRecord(c: Canvas, cx: Float, cy: Float, r: Float, angle: Float, skin: Skin, p: Paint, armOn: Boolean, label: Int = skin.orange.toArgb(), wedge: Int = 0xFFFFFFFF.toInt()) {
+    private fun drawRecord(c: Canvas, cx: Float, cy: Float, r: Float, angle: Float, skin: Skin, p: Paint, armOn: Boolean) {
         p.style = Paint.Style.FILL
         p.color = 0xFF000000.toInt()
         c.drawCircle(cx, cy, r, p)
@@ -158,9 +158,9 @@ object ShareCard {
         c.drawArc(RectF(cx - r * 0.85f, cy - r * 0.85f, cx + r * 0.85f, cy + r * 0.85f), -40f, 50f, false, p)
         p.style = Paint.Style.FILL
         val lr = r * 0.38f
-        p.color = label; c.drawCircle(cx, cy, lr, p)
-        p.color = wedge; c.drawArc(RectF(cx - lr, cy - lr, cx + lr, cy + lr), -90f, 90f, true, p)
-        p.color = label; c.drawCircle(cx, cy, lr * 0.3f, p)
+        p.color = skin.orange.toArgb(); c.drawCircle(cx, cy, lr, p)
+        p.color = 0xFFFFFFFF.toInt(); c.drawArc(RectF(cx - lr, cy - lr, cx + lr, cy + lr), -90f, 90f, true, p)
+        p.color = skin.orange.toArgb(); c.drawCircle(cx, cy, lr * 0.3f, p)
         p.color = 0xFF000000.toInt(); c.drawCircle(cx, cy + lr * 0.67f, r * 0.025f, p)
         c.restore()
         p.color = 0xFFFFFFFF.toInt(); c.drawCircle(cx, cy, r * 0.038f, p)
