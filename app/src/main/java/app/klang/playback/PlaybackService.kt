@@ -68,7 +68,8 @@ class PlaybackService : MediaLibraryService() {
             val p = session?.player ?: return
             val target = AudioEngine.userVolume * fadeFactor(p)
             if (kotlin.math.abs(p.volume - target) > 0.002f) p.volume = target
-            handler.postDelayed(this, 40)
+            // only while sound is playing: no wake-ups when paused
+            if (p.isPlaying) handler.postDelayed(this, 40)
         }
     }
 
@@ -183,6 +184,11 @@ class PlaybackService : MediaLibraryService() {
         }
 
         override fun onAudioSessionIdChanged(audioSessionId: Int) = openEffects(audioSessionId)
+
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            handler.removeCallbacks(volumeLoop)
+            handler.post(volumeLoop)
+        }
 
         /** YouTube Opus failed on this phone? Try the AAC stream once. Otherwise move on to the next song. */
         override fun onPlayerError(error: PlaybackException) {
@@ -314,7 +320,32 @@ class PlaybackService : MediaLibraryService() {
         }.take(200)
     }
 
+    /**
+     * Who may browse the library (song names, history, favorites). Other apps can still see
+     * what is playing and press play/pause, but cannot read the library.
+     */
+    private val trustedBrowsers = setOf(
+        "com.google.android.projection.gearhead",       // Android Auto
+        "com.google.android.googlequicksearchbox",      // Google Assistant
+        "com.google.android.carassistant",
+        "com.google.android.apps.automotive.media",
+        "com.google.android.wearable.app",              // Wear OS
+        "com.android.systemui",
+        "com.android.bluetooth",
+    )
+
+    private fun mayBrowse(c: MediaSession.ControllerInfo): Boolean =
+        c.packageName == packageName || c.isTrusted || c.packageName in trustedBrowsers
+
     private inner class LibraryCallback : MediaLibrarySession.Callback {
+
+        override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
+            val commands = if (mayBrowse(controller)) MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
+            else MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS
+            return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                .setAvailableSessionCommands(commands)
+                .build()
+        }
 
         override fun onGetLibraryRoot(
             session: MediaLibrarySession, browser: MediaSession.ControllerInfo, params: LibraryParams?,

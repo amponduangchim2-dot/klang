@@ -12,24 +12,32 @@ android {
         applicationId = "app.klang.player"
         minSdk = 26
         targetSdk = 35
-        versionCode = 16
-        versionName = "0.9.2"
+        versionCode = 18
+        versionName = "1.0.0"
     }
 
-    // One fixed key so every build can be installed over the previous one.
+    // The release key never lives in the repository. CI writes it from GitHub Secrets
+    // (KLANG_KEYSTORE_B64, KLANG_KEYSTORE_PASSWORD, KLANG_KEY_ALIAS); without them the
+    // release build comes out unsigned.
+    val ksFile = file("release.jks")
+    val ksPass = System.getenv("KLANG_KEYSTORE_PASSWORD")
+    val ksAlias = System.getenv("KLANG_KEY_ALIAS")
+    val canSign = ksFile.exists() && !ksPass.isNullOrEmpty() && !ksAlias.isNullOrEmpty()
     signingConfigs {
-        getByName("debug") {
-            storeFile = file("klang-dev.keystore")
-            storePassword = "klangdev"
-            keyAlias = "klang"
-            keyPassword = "klangdev"
+        if (canSign) {
+            create("release") {
+                storeFile = ksFile
+                storePassword = ksPass
+                keyAlias = ksAlias
+                keyPassword = ksPass
+            }
         }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (canSign) signingConfigs.getByName("release") else null
         }
     }
 

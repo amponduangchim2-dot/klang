@@ -56,6 +56,8 @@ data class PlayerUi(
     val title: String = "",
     val artist: String = "",
     val isPlaying: Boolean = false,
+    /** The queue played to its end. */
+    val ended: Boolean = false,
     val hasMedia: Boolean = false,
     val index: Int = 0,
     val count: Int = 0,
@@ -196,6 +198,10 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var controller: MediaController? = null
 
+    /** Set by the screen: false while the app is in the background. */
+    @Volatile var visible: Boolean = true
+        set(value) { field = value; if (value) refresh() }
+
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) = refresh()
         override fun onPlayerError(error: PlaybackException) {
@@ -250,11 +256,13 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             var tick = 0
             while (true) {
-                refresh()
+                // In the background only the jobs that matter keep going (skipping talk,
+                // counting plays), once a second; the screen is refreshed only when visible.
+                if (visible) refresh()
                 skipSegmentsIfNeeded()
                 countPlayIfNeeded()
                 if (++tick % 20 == 0) saveQueueState()
-                delay(250)
+                delay(if (visible) 250 else 1000)
             }
         }
     }
@@ -318,8 +326,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         _ui.value = _ui.value.copy(
             connected = true,
             title = md.title?.toString() ?: song?.title.orEmpty(),
-            artist = md.artist?.toString() ?: song?.artist.orEmpty(),
+            artist = YouTube.cleanUploader(md.artist?.toString() ?: song?.artist.orEmpty()),
             isPlaying = c.isPlaying,
+            ended = c.playbackState == Player.STATE_ENDED,
             hasMedia = c.mediaItemCount > 0,
             index = c.currentMediaItemIndex,
             count = c.mediaItemCount,

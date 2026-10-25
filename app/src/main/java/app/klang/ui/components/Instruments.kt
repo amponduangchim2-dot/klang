@@ -48,8 +48,15 @@ enum class VisMode(val label: String) { Spectrum("spectrum"), Oscilloscope("osci
 @Composable
 fun GrilleVisualizer(mode: VisMode, playing: Boolean, onTap: () -> Unit, modifier: Modifier = Modifier) {
     var frame by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(Unit) { while (true) withFrameNanos { frame = it } }
     val smooth = remember { FloatArray(AudioEngine.METER_BANDS) }
+    // Animate only while there is something to show: playing, or the dots still falling back.
+    LaunchedEffect(playing, mode) {
+        if (mode == VisMode.Off) { frame++; return@LaunchedEffect }
+        while (true) {
+            withFrameNanos { frame = it }
+            if (!playing && smooth.all { it < 0.01f }) { frame++; break }
+        }
+    }
     val isPlaying by rememberUpdatedState(playing)
     Canvas(
         modifier

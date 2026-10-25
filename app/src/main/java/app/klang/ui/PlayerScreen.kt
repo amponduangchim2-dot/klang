@@ -104,7 +104,7 @@ fun PlayerScreen(ui: PlayerUi, sleepChoice: Int, sleepLeftMs: Long, libraryCount
             Spacer(Modifier.width(8.dp))
             Text("player 1", style = K.label.copy(fontSize = 12.sp))
             Spacer(Modifier.weight(1f))
-            Text(if (ui.isPlaying) "playing" else if (ui.hasMedia) "ready" else "no music loaded", style = K.label.copy(fontSize = 12.sp))
+            Text(if (ui.isPlaying) "playing" else if (ui.ended) "end of playlist" else if (ui.hasMedia) "ready" else "no music loaded", style = K.label.copy(fontSize = 12.sp))
             Spacer(Modifier.width(6.dp))
             Lamp(ui.isPlaying)
         }
@@ -125,7 +125,7 @@ fun PlayerScreen(ui: PlayerUi, sleepChoice: Int, sleepLeftMs: Long, libraryCount
                     LcdBox(Modifier.fillMaxWidth().clickable { remaining = !remaining }) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                if (ui.isPlaying) "▶ play" else if (ui.positionMs > 0) "❚❚ pause" else "■ stop",
+                                if (ui.isPlaying) "▶ play" else if (ui.ended) "■ end" else if (ui.positionMs > 0) "❚❚ pause" else "■ stop",
                                 style = K.lcdSmall.copy(color = K.seg), maxLines = 1, softWrap = false,
                                 modifier = Modifier.weight(1f)
                             )

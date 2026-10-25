@@ -22,7 +22,21 @@ jobs:
         with:
           gradle-version: "8.10.2"
 
+      - name: Signing key from secrets
+        env:
+          KS_B64: ${{ secrets.KLANG_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > app/release.jks
+            echo "Signing with the release key."
+          else
+            echo "::warning::No signing secrets yet: the APK is unsigned. Add KLANG_KEYSTORE_B64, KLANG_KEYSTORE_PASSWORD and KLANG_KEY_ALIAS in Settings > Secrets and variables > Actions."
+          fi
+
       - name: Build
+        env:
+          KLANG_KEYSTORE_PASSWORD: ${{ secrets.KLANG_KEYSTORE_PASSWORD }}
+          KLANG_KEY_ALIAS: ${{ secrets.KLANG_KEY_ALIAS }}
         run: |
           set -o pipefail
           gradle :app:assembleRelease --console=plain 2>&1 | tee build.log
@@ -42,6 +56,7 @@ jobs:
 
       - name: Rename APK
         run: |
+          rm -f app/release.jks
           mkdir -p out
           cp app/build/outputs/apk/release/*.apk out/klang.apk
 

@@ -140,6 +140,18 @@ class MainActivity : ComponentActivity() {
         startActivity(Intent.createChooser(send, title))
     }
 
+    private val playerVm: PlayerViewModel get() = androidx.lifecycle.ViewModelProvider(this)[PlayerViewModel::class.java]
+
+    override fun onStart() {
+        super.onStart()
+        playerVm.visible = true
+    }
+
+    override fun onStop() {
+        playerVm.visible = false
+        super.onStop()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.light(AColor.TRANSPARENT, AColor.TRANSPARENT),
@@ -359,9 +371,16 @@ class MainActivity : ComponentActivity() {
             ) {
                 when (screen) {
                     Screen.Player -> androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
-                        // Tall enough: the whole face fits the screen. Small phones: it scrolls.
-                        if (maxHeight >= 660.dp) {
-                            PlayerScreen(ui, sleep, sleepLeft, songs.size, eq.bands, eq.presetName, actions, big = options.bigControls, fit = true)
+                        // The face needs about 680 dp of height. On shorter screens (small phones, or a
+                        // large display-size setting) everything is drawn a little smaller, in proportion,
+                        // so it still fits without scrolling. Only very short screens scroll.
+                        val need = 680.dp
+                        val scale = (maxHeight / need).coerceAtMost(1f)
+                        if (scale >= 0.72f) {
+                            val d = LocalDensity.current
+                            CompositionLocalProvider(LocalDensity provides Density(d.density * scale, d.fontScale)) {
+                                PlayerScreen(ui, sleep, sleepLeft, songs.size, eq.bands, eq.presetName, actions, big = options.bigControls, fit = true)
+                            }
                         } else Box(Modifier.verticalScroll(rememberScrollState())) {
                             PlayerScreen(ui, sleep, sleepLeft, songs.size, eq.bands, eq.presetName, actions, big = options.bigControls)
                         }

@@ -182,12 +182,16 @@ object YouTube {
         return runCatching { service.suggestionExtractor.suggestionList(query.trim()) }.getOrDefault(emptyList())
     }
 
+    /** "Artist - Topic" (YouTube's automatic music channels) and "ArtistVEVO" read better as "Artist". */
+    fun cleanUploader(name: String): String =
+        name.replace(Regex("(?i)\\s*-\\s*topic$"), "").replace(Regex("(?i)\\s*VEVO$"), "").trim()
+
     private fun items(list: List<*>, uploaderFallback: String? = null): List<YtItem> =
         list.filterIsInstance<StreamInfoItem>().map {
             YtItem(
                 url = it.url,
                 title = it.name,
-                uploader = it.uploaderName?.takeIf { u -> u.isNotBlank() } ?: uploaderFallback.orEmpty(),
+                uploader = cleanUploader(it.uploaderName?.takeIf { u -> u.isNotBlank() } ?: uploaderFallback.orEmpty()),
                 durationSec = it.duration.coerceAtLeast(0),
                 thumbnail = it.thumbnails.firstOrNull()?.url,
             )
@@ -275,7 +279,7 @@ object YouTube {
             Resolved(
                 pageUrl = info.url,
                 title = info.name,
-                uploader = info.uploaderName.orEmpty(),
+                uploader = cleanUploader(info.uploaderName.orEmpty()),
                 durationSec = info.duration,
                 streamUrl = stream.content,
                 kbps = stream.averageBitrate.takeIf { it > 0 },
