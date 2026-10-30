@@ -38,6 +38,27 @@ data class YtItem(
     val uploader: String,
     val durationSec: Long,
     val thumbnail: String?,
+    /** A live stream right now: watch it on the video screen. */
+    val live: Boolean = false,
+)
+
+/** One picture quality of a video. */
+data class VideoQuality(val height: Int, val url: String, val codec: String)
+
+/** Everything the video screen needs to play a clip or a live stream. */
+data class VideoPlan(
+    val pageUrl: String,
+    val title: String,
+    val uploader: String,
+    val durationSec: Long,
+    val live: Boolean,
+    /** Live streams: one adaptive HLS link that carries picture and sound. */
+    val hlsUrl: String?,
+    /** Picture-only streams, sharpest first; played together with [audioUrl]. */
+    val qualities: List<VideoQuality>,
+    val audioUrl: String?,
+    /** Older single-file streams with sound (360p): the fallback. */
+    val muxedUrl: String?,
 )
 
 /** What a playable YouTube track resolves to. */
@@ -227,7 +248,11 @@ object YouTube {
                 title = it.name,
                 uploader = cleanUploader(it.uploaderName?.takeIf { u -> u.isNotBlank() } ?: uploaderFallback.orEmpty()),
                 durationSec = it.duration.coerceAtLeast(0),
-                thumbnail = it.thumbnails.firstOrNull()?.url,
+                // a sharp-enough picture for the list (about 320x180), not the largest one
+                thumbnail = it.thumbnails.minByOrNull { im -> kotlin.math.abs((if (im.height > 0) im.height else 180) - 200) }?.url
+                    ?: it.thumbnails.firstOrNull()?.url,
+                live = it.streamType == org.schabi.newpipe.extractor.stream.StreamType.LIVE_STREAM ||
+                    it.streamType == org.schabi.newpipe.extractor.stream.StreamType.AUDIO_LIVE_STREAM,
             )
         }
 
@@ -330,6 +355,46 @@ object YouTube {
         val opusBest = direct.filter { it.format == MediaFormat.WEBMA_OPUS }.maxByOrNull { it.averageBitrate }
         val aacBest = direct.filter { it.format == MediaFormat.M4A }.maxByOrNull { it.averageBitrate }
         return (if (opus) opusBest ?: aacBest else aacBest ?: opusBest) ?: direct.maxByOrNull { it.averageBitrate }
+    }
+
+    /**
+     * Streams for watching a video. Picture and sound come as separate streams on YouTube for
+     * anything above 360p; the player plays the two together. For each height the most widely
+     * supported codec is kept: H.264 (avc1), then VP9, then AV1.
+     */
+    fun resolveVideo(url: String): VideoPlan {
+        val id = videoId(url) ?: throw TrackUnavailable("Not a YouTube video link")
+        init()
+        return guard {
+            val info = StreamInfo.getInfo(service, watchUrl(id))
+            val live = info.streamType == org.schabi.newpipe.extractor.stream.StreamType.LIVE_STREAM ||
+                info.streamType == org.schabi.newpipe.extractor.stream.StreamType.AUDIO_LIVE_STREAM
+            fun rank(codec: String?): Int = when {
+                codec == null -> 3
+                codec.startsWith("avc") -> 0
+                codec.startsWith("vp9") || codec.startsWith("vp09") -> 1
+                codec.startsWith("av01") -> 2
+                else -> 3
+            }
+            val byHeight = info.videoOnlyStreams
+                .filter { it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.isUrl && it.height > 0 }
+                .groupBy { it.height }
+                .mapNotNull { (h, list) -> list.minByOrNull { rank(it.codec) }?.let { VideoQuality(h, it.content, it.codec.orEmpty()) } }
+                .sortedByDescending { it.height }
+            val audio = info.audioStreams
+                .filter { it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.isUrl }
+                .let { list -> list.filter { it.format == MediaFormat.M4A }.maxByOrNull { it.averageBitrate } ?: list.maxByOrNull { it.averageBitrate } }
+            val muxed = info.videoStreams
+                .filter { it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.isUrl }
+                .maxByOrNull { it.height }
+            val hls = info.hlsUrl?.takeIf { it.isNotBlank() }
+            if (hls == null && byHeight.isEmpty() && muxed == null) throw TrackUnavailable("No playable video for this clip")
+            VideoPlan(
+                pageUrl = info.url, title = info.name, uploader = cleanUploader(info.uploaderName.orEmpty()),
+                durationSec = info.duration, live = live, hlsUrl = hls,
+                qualities = if (live) emptyList() else byHeight, audioUrl = audio?.content, muxedUrl = muxed?.content,
+            )
+        }
     }
 
     /** User agent that matches the YouTube client the stream URL was made for. */

@@ -9,7 +9,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -63,6 +67,8 @@ class SearchActions(
     val submit: (String) -> Unit,
     val voice: () -> Unit,
     val play: (YtItem) -> Unit,
+    /** Open the clip on the video screen. */
+    val watch: (YtItem) -> Unit,
     val add: (YtItem) -> Unit,
     val addAll: () -> Unit,
     val clearHistory: () -> Unit,
@@ -113,30 +119,34 @@ fun SearchScreen(s: SearchUi, skipNonMusic: Boolean, a: SearchActions, startTab:
                 Key(a.voice, Modifier.size(46.dp), description = "Voice search") { fg -> MicGlyph(fg) }
                 GlyphKey(Glyph.Search, { focus.clearFocus(); a.submit(s.query) }, Modifier.size(46.dp), orange = true, description = "Search")
             }
-            val chips = if (s.suggestions.isNotEmpty() && s.query.isNotBlank()) s.suggestions else s.history.take(8)
-            if (chips.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (s.suggestions.isNotEmpty() && s.query.isNotBlank()) "suggestions" else "history", style = K.label, modifier = Modifier.weight(1f))
-                    if (s.suggestions.isEmpty() || s.query.isBlank()) Text("clear", style = K.label.copy(color = K.orange), modifier = Modifier.clickable { a.clearHistory() }.padding(4.dp))
-                }
-                Spacer(Modifier.height(4.dp))
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    chips.forEach { c -> Chip(c, false, { focus.clearFocus(); a.setQuery(c); a.submit(c) }) }
+            // one slim scrolling row; gone once the search is done so the list gets the room
+            val typing = s.query.isNotBlank() && s.query != s.heading
+            val showSuggest = typing && s.suggestions.isNotEmpty()
+            val showHistory = !showSuggest && s.query.isBlank() && s.results.isEmpty() && s.history.isNotEmpty()
+            if (showSuggest || showHistory) {
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    if (showHistory) MiniChip("clear", accent = true) { a.clearHistory() }
+                    (if (showSuggest) s.suggestions.take(10) else s.history.take(10)).forEach { c ->
+                        MiniChip(c) { focus.clearFocus(); a.setQuery(c); a.submit(c) }
+                    }
                 }
             }
         }
 
         Tile(Modifier.fillMaxWidth(), padding = 6.dp) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Segmented(listOf("results", "bookmarks"), tab, { tab = it })
-            Spacer(Modifier.weight(1f))
-            TextKey(if (skipNonMusic) "skip talk: on" else "skip talk: off", a.toggleSkip, Modifier.height(36.dp).width(112.dp), active = skipNonMusic)
-            if (tab == 0 && s.results.isNotEmpty()) {
-                Spacer(Modifier.width(6.dp))
-                TextKey("add all", a.addAll, Modifier.height(36.dp).width(76.dp))
+            Segmented(listOf("results", "bookmarks"), tab, { tab = it }, Modifier.fillMaxWidth(), fill = true)
+            if (tab == 0) {
+                Spacer(Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TextKey(if (skipNonMusic) "skip talk: on" else "skip talk: off", a.toggleSkip, Modifier.weight(1f).height(40.dp), active = skipNonMusic)
+                    TextKey("add all to playlist", { if (s.results.isNotEmpty()) a.addAll() }, Modifier.weight(1f).height(40.dp))
+                }
             }
-        }
         }
 
         if (tab == 0) {
@@ -149,7 +159,7 @@ fun SearchScreen(s: SearchUi, skipNonMusic: Boolean, a: SearchActions, startTab:
                     when {
                         s.error != null && s.results.isEmpty() -> Text(s.error, style = K.lcdText, modifier = Modifier.padding(12.dp))
                         s.results.isEmpty() && !s.loading -> Text(
-                            "Type a song or an artist and tap search.\nPaste a YouTube link to add it, a playlist or Mix link to import it (a Mix is also saved to the library), or a channel link to bookmark it.",
+                            "Type a song or an artist and tap search. Tap a clip to watch it, + to add its sound to the playlist.\nPaste a YouTube link to add it, a playlist or Mix link to import it (a Mix is also saved to the library), or a channel link to bookmark it.",
                             style = K.lcd("", K.lcdText.copy(fontSize = 12.sp)), modifier = Modifier.padding(12.dp)
                         )
                         else -> LazyColumn(Modifier.fillMaxSize()) {
@@ -194,18 +204,48 @@ private fun ResultRow(r: YtItem, a: SearchActions) {
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(6.dp))
-            .clickable { a.play(r) }
-            .padding(start = 8.dp, top = 7.dp, bottom = 7.dp, end = 4.dp),
+            .clickable { a.watch(r) }
+            .padding(start = 4.dp, top = 5.dp, bottom = 5.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(Modifier.weight(1f)) {
-            Text(r.title, style = K.lcd(r.title).copy(fontWeight = FontWeight.Medium), maxLines = 2, overflow = TextOverflow.Ellipsis)
-            val sub = listOfNotNull(r.uploader.takeIf { it.isNotBlank() }, if (r.durationSec > 0) formatTime(r.durationSec * 1000) else null).joinToString(" · ")
-            if (sub.isNotEmpty()) Text(sub, style = K.lcd(sub, K.lcdSmall), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        // clip cover, 16:9, with its length or a red live tag
+        Box(Modifier.width(112.dp).height(63.dp).clip(RoundedCornerShape(5.dp)).background(Color(0xFF161616))) {
+            if (r.thumbnail != null) {
+                AsyncImage(
+                    model = r.thumbnail, contentDescription = null,
+                    contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()
+                )
+            }
+            val tag = if (r.live) "● live" else if (r.durationSec > 0) formatTime(r.durationSec * 1000) else null
+            if (tag != null) Text(
+                tag,
+                style = K.lcdSmall.copy(color = Color.White, fontSize = 10.sp, lineHeight = 12.sp),
+                modifier = Modifier.align(Alignment.BottomEnd).padding(3.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(if (r.live) K.orange else Color(0xCC000000))
+                    .padding(horizontal = 4.dp, vertical = 1.dp)
+            )
         }
-        Spacer(Modifier.width(6.dp))
+        Spacer(Modifier.width(8.dp))
+        Column(Modifier.weight(1f)) {
+            Text(r.title, style = K.lcd(r.title).copy(fontWeight = FontWeight.Medium, fontSize = 13.sp, lineHeight = 17.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (r.uploader.isNotBlank()) Text(r.uploader, style = K.lcd(r.uploader, K.lcdSmall), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Spacer(Modifier.width(4.dp))
         TextKey("+", { a.add(r) }, Modifier.size(36.dp))
     }
+}
+
+/** Small one-line chip for suggestions and history. */
+@Composable
+private fun MiniChip(text: String, accent: Boolean = false, onClick: () -> Unit) {
+    Text(
+        text,
+        maxLines = 1,
+        style = K.body.copy(fontSize = 12.sp, lineHeight = 14.sp, color = if (accent) K.orange else K.ink2),
+        modifier = Modifier.clip(RoundedCornerShape(50)).background(K.tile2).clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 5.dp)
+    )
 }
 
 @Composable

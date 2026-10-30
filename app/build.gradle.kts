@@ -12,8 +12,8 @@ android {
         applicationId = "app.klang.player"
         minSdk = 26
         targetSdk = 35
-        versionCode = 19
-        versionName = "1.0.1"
+        versionCode = 20
+        versionName = "1.1.0"
     }
 
     // The release key never lives in the repository. CI writes it from GitHub Secrets
@@ -75,6 +75,8 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     implementation("androidx.media3:media3-session:1.4.1")
     implementation("androidx.media3:media3-datasource:1.4.1")
+    implementation("androidx.media3:media3-exoplayer-hls:1.4.1")
+    implementation("io.coil-kt:coil-compose:2.7.0")
 
     // YouTube search and stream extraction (GPL-3.0), the same library Droidamp uses
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")

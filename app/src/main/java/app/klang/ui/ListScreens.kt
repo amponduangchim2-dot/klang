@@ -37,7 +37,7 @@ import app.klang.ui.components.LcdBox
 import app.klang.ui.components.TextKey
 import app.klang.ui.components.Tile
 
-enum class Screen { Player, Library, LibraryAdd, Queue, Eq, Search, Hub, Songs, Lyrics, Bookmarks, Skins, Share, Options }
+enum class Screen { Player, Library, LibraryAdd, Queue, Eq, Search, Hub, Songs, Lyrics, Bookmarks, Skins, Share, Options, Video }
 
 @Composable
 fun ScreenHeader(title: String, model: String, onBack: () -> Unit) {

@@ -44,6 +44,8 @@ import app.klang.ui.EqScreen
 import app.klang.ui.K
 import app.klang.ui.SearchActions
 import app.klang.ui.SearchScreen
+import app.klang.ui.VideoActions
+import app.klang.ui.VideoScreen
 import app.klang.ui.PlaylistActions
 import app.klang.ui.PlaylistScreen
 import app.klang.ui.LibraryScreen
@@ -239,6 +241,8 @@ class MainActivity : ComponentActivity() {
             }
             var screen by rememberSaveable { mutableStateOf(Screen.Player) }
             var cameFromOptions by rememberSaveable { mutableStateOf(false) }
+            var videoItem by remember { mutableStateOf<app.klang.youtube.YtItem?>(null) }
+            var videoFull by remember { mutableStateOf(false) }
             var hasPermission by remember {
                 mutableStateOf(ContextCompat.checkSelfPermission(this, audioPermission) == PackageManager.PERMISSION_GRANTED)
             }
@@ -262,6 +266,7 @@ class MainActivity : ComponentActivity() {
                 screen = when (screen) {
                     Screen.LibraryAdd -> Screen.Queue
                     Screen.Songs, Screen.Bookmarks -> Screen.Hub
+                    Screen.Video -> Screen.Search
                     Screen.Skins -> if (cameFromOptions) Screen.Options else Screen.Player
                     else -> Screen.Player
                 }
@@ -303,6 +308,7 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     play = vm::playResult,
+                    watch = { videoItem = it; videoFull = false; screen = Screen.Video },
                     add = vm::addResult,
                     addAll = vm::addAllResults,
                     clearHistory = vm::clearHistory,
@@ -366,8 +372,10 @@ class MainActivity : ComponentActivity() {
                 Modifier
                     .fillMaxSize()
                     .background(K.shell)
-                    .windowInsetsPadding(WindowInsets.safeDrawing)
-                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                    .then(
+                        if (screen == Screen.Video && videoFull) Modifier.background(androidx.compose.ui.graphics.Color.Black)
+                        else Modifier.windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 8.dp, vertical = 6.dp)
+                    )
             ) {
                 when (screen) {
                     Screen.Player -> androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -411,10 +419,22 @@ class MainActivity : ComponentActivity() {
                         })
                     }
                     Screen.Search -> SearchScreen(searchUi, skipNonMusic, searchActions)
+                    Screen.Video -> {
+                        val v = videoItem
+                        if (v == null) LaunchedEffect(Unit) { screen = Screen.Search }
+                        else VideoScreen(v, videoFull, { videoFull = it }, remember(vm) {
+                            VideoActions(
+                                back = { videoFull = false; screen = Screen.Search },
+                                listen = { item -> vm.playResult(item); screen = Screen.Player },
+                                add = vm::addResult,
+                                pauseMusic = vm::pause,
+                            )
+                        })
+                    }
                     Screen.Bookmarks -> SearchScreen(searchUi, skipNonMusic, remember(searchActions) {
                         SearchActions(
                             { screen = Screen.Hub }, searchActions.setQuery, searchActions.suggest, searchActions.submit,
-                            searchActions.voice, searchActions.play, searchActions.add, searchActions.addAll,
+                            searchActions.voice, searchActions.play, searchActions.watch, searchActions.add, searchActions.addAll,
                             searchActions.clearHistory, searchActions.openBookmark, searchActions.deleteBookmark,
                             searchActions.addBookmark, searchActions.toggleSkip,
                         )

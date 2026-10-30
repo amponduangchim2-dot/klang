@@ -11,7 +11,8 @@ round OP-1 style keys.
 - 10-band equalizer with preamp, 16 built-in presets, your own presets, Winamp `.eqf` import/export,
   a peak limiter so boosts never clip, and support for outside equalizer apps (Wavelet, JamesDSP…)
 - Playlist editing (add / rem / sel / misc / list), `.m3u` import/export, saved lists
-- YouTube search, links, playlists and Mixes, Opus audio with AAC fallback, SponsorBlock skipping
+- YouTube search with clip covers, links, playlists and Mixes, Opus audio with AAC fallback, SponsorBlock skipping
+- Video deck: watch clips in HD (up to the best quality the phone can decode) and live streams, full screen
 - Library: favorites, most played, history, saved lists, bookmarks
 - Synced lyrics from LRCLIB
 - Skins, share card (square / story), sleep timer, fade between songs, big controls
@@ -43,7 +44,7 @@ because it uses NewPipe Extractor (GPL-3.0).
 Third-party parts:
 
 - NewPipe Extractor — GPL-3.0
-- AndroidX Media3 / ExoPlayer, Jetpack Compose — Apache-2.0
+- AndroidX Media3 / ExoPlayer, Jetpack Compose, Coil — Apache-2.0
 - Klang Sans font: Outfit (© The Outfit Project Authors) + IBM Plex Sans Thai (© IBM Corp.),
   merged; SIL Open Font License 1.1 (texts in `app/src/main/assets/licenses/`)
 - Lyrics data: LRCLIB (lrclib.net). Skip segments: SponsorBlock (CC BY-NC-SA 4.0)

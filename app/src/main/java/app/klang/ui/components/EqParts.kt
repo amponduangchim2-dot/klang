@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -164,7 +165,7 @@ fun EqCurve(bands: List<Float>, preamp: Float, on: Boolean, modifier: Modifier =
 
 /** Pill-shaped segmented switch (on / off / auto). */
 @Composable
-fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
+fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier, fill: Boolean = false) {
     Row(
         modifier
             .clip(RoundedCornerShape(50))
@@ -176,14 +177,15 @@ fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit, mod
             val on = i == selected
             Box(
                 Modifier
+                    .then(if (fill) Modifier.weight(1f).heightIn(min = 40.dp) else Modifier)
                     .then(if (on) Modifier.shadow(1.5.dp, RoundedCornerShape(50)) else Modifier)
                     .clip(RoundedCornerShape(50))
                     .background(if (on) K.keyHi else Color.Transparent)
                     .clickable { onSelect(i) }
-                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                    .padding(horizontal = if (fill) 6.dp else 14.dp, vertical = if (fill) 9.dp else 6.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text(o, style = K.body.copy(fontSize = 13.sp, color = if (on) K.ink else K.ink2, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium))
+                Text(o, maxLines = 1, style = K.body.copy(fontSize = if (fill) 15.sp else 13.sp, color = if (on) K.ink else K.ink2, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium))
             }
         }
     }
