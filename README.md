@@ -16,7 +16,8 @@ round OP-1 style keys.
 - Library: favorites, most played, history, saved lists, bookmarks
 - Synced lyrics from LRCLIB
 - Skins, share card (square / story), sleep timer, fade between songs, big controls
-- Android Auto (browse, search, voice), home-screen turntable widget, in-app update check
+- Android Auto (browse, search, voice) with covers drawn as the player face in Klang Sans and car buttons
+  (favorite, shuffle, repeat, EQ preset); home-screen turntable widget, in-app update check
 
 ## Build
 
