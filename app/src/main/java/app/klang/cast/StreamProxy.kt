@@ -41,6 +41,17 @@ class StreamProxy(private val context: Context) {
 
     /** For the status line: how often the TV asked, and the last thing that went wrong upstream. */
     @Volatile var tvRequests = 0
+
+    /** Tallest picture to give the TV (0 = whatever the site offers). One quality only: switching mid-film makes TVs stall. */
+    @Volatile var maxHeight = 720
+
+    // ---- pieces of the film, fetched ahead so the TV never waits on the website
+    private val order = java.util.Collections.synchronizedList(ArrayList<String>())
+    private val cache = object : LinkedHashMap<String, Pair<ByteArray, String>>(16, 0.75f, true) {
+        override fun removeEldestEntry(e: MutableMap.MutableEntry<String, Pair<ByteArray, String>>?) = size > 10
+    }
+    private val inFlight = java.util.Collections.synchronizedSet(HashSet<String>())
+    private val ahead = Executors.newFixedThreadPool(2)
     @Volatile var lastProblem: String? = null
 
     /** Starts (or re-targets) the relay and returns the TV-facing address of [url]. */
@@ -53,6 +64,7 @@ class StreamProxy(private val context: Context) {
             pool.execute { acceptLoop(s) }
         }
         token = randomToken()
+        order.clear(); synchronized(cache) { cache.clear() }
         tvRequests = 0
         lastProblem = null
         ipNow = ip
@@ -64,6 +76,7 @@ class StreamProxy(private val context: Context) {
 
     @Synchronized
     fun stop() {
+        order.clear(); synchronized(cache) { cache.clear() }
         runCatching { server?.close() }
         server = null
         token = ""
@@ -163,6 +176,17 @@ class StreamProxy(private val context: Context) {
             status(out, 403, "Forbidden", listOf("Content-Length: 0")); return
         }
 
+        if (method == "GET" && reqHeaders["range"] == null && order.contains(target)) {
+            val piece = synchronized(cache) { cache[target] } ?: fetchPiece(target)
+            if (piece != null) {
+                synchronized(cache) { cache[target] = piece }
+                prefetchAfter(target)
+                status(out, 200, "OK", cors() + listOfNotNull(piece.second.takeIf { it.isNotEmpty() }?.let { "Content-Type: $it" }, "Content-Length: ${piece.first.size}"))
+                out.write(piece.first); out.flush()
+                return
+            }
+        }
+
         val conn = URL(target).openConnection() as HttpURLConnection
         conn.instanceFollowRedirects = true
         conn.connectTimeout = 15_000; conn.readTimeout = 30_000
@@ -230,6 +254,40 @@ class StreamProxy(private val context: Context) {
         out.write(sb.toString().toByteArray())
     }
 
+    /** One piece of the film, cleaned (see [tsStart]). Null when the site refuses. */
+    private fun fetchPiece(target: String): Pair<ByteArray, String>? = runCatching {
+        val conn = URL(target).openConnection() as HttpURLConnection
+        conn.instanceFollowRedirects = true
+        conn.connectTimeout = 15_000; conn.readTimeout = 30_000
+        headers.referer?.let { conn.setRequestProperty("Referer", it); runCatching { conn.setRequestProperty("Origin", URL(it).let { r -> "${r.protocol}://${r.host}" }) } }
+        headers.userAgent?.let { conn.setRequestProperty("User-Agent", it) }
+        headers.cookie?.let { conn.setRequestProperty("Cookie", it) }
+        try {
+            if (conn.responseCode != 200) { lastProblem = "site said ${conn.responseCode}"; return null }
+            val type = conn.contentType.orEmpty()
+            val bytes = conn.inputStream.use { it.readBytes() }
+            val start = tsStart(bytes)
+            val body = if (start > 0) bytes.copyOfRange(start, bytes.size) else bytes
+            body to (if (start > 0 || looksTs(body)) "video/mp2t" else if (isMp4(body)) "video/mp4" else type)
+        } finally { conn.disconnect() }
+    }.getOrNull()
+
+    /** Fetches the next few pieces while the TV plays this one. */
+    private fun prefetchAfter(target: String) {
+        val i = order.indexOf(target)
+        if (i < 0) return
+        val tok = token
+        for (k in 1..4) {
+            val next = order.getOrNull(i + k) ?: break
+            if (synchronized(cache) { cache.containsKey(next) } || !inFlight.add(next)) continue
+            ahead.execute {
+                try {
+                    if (tok == token) fetchPiece(next)?.let { p -> synchronized(cache) { cache[next] = p } }
+                } finally { inFlight.remove(next) }
+            }
+        }
+    }
+
     private fun looksTs(b: ByteArray) = b.size > 376 && b[0] == 0x47.toByte() && b[188] == 0x47.toByte() && b[376] == 0x47.toByte()
 
     private fun isMp4(b: ByteArray): Boolean {
@@ -264,14 +322,50 @@ class StreamProxy(private val context: Context) {
     private val uriAttr = Regex("URI=\"([^\"]+)\"")
 
     /** Every address in the playlist goes through the relay as well. */
-    private fun rewrite(text: String, base: String): String {
+    private val resRe = Regex("RESOLUTION=(\\d+)x(\\d+)")
+    private val bwRe = Regex("[^-]BANDWIDTH=(\\d+)")
+
+    /** A master playlist keeps one quality: the tallest within [maxHeight]. */
+    private fun oneVariant(text: String): String {
+        if (!text.contains("#EXT-X-STREAM-INF") || maxHeight == 0) return text
+        val lines = text.lines()
+        val head = mutableListOf<String>()
+        val variants = mutableListOf<Pair<String, String>>()
+        var i = 0
+        while (i < lines.size) {
+            val l = lines[i]
+            if (l.startsWith("#EXT-X-STREAM-INF")) {
+                var j = i + 1
+                while (j < lines.size && (lines[j].isBlank() || lines[j].startsWith("#"))) j++
+                if (j < lines.size) variants += l to lines[j]
+                i = j + 1; continue
+            }
+            if (!l.startsWith("#EXT-X-I-FRAME-STREAM-INF")) head += l
+            i++
+        }
+        if (variants.size <= 1) return text
+        fun height(inf: String) = resRe.find(inf)?.groupValues?.get(2)?.toIntOrNull()
+        fun bw(inf: String) = bwRe.find(" $inf")?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+        val capBw = when { maxHeight <= 480 -> 1_600_000L; maxHeight <= 720 -> 3_500_000L; else -> 8_000_000L }
+        val pick = if (variants.all { height(it.first) != null }) {
+            variants.filter { height(it.first)!! <= maxHeight }.maxByOrNull { height(it.first)!! * 100_000_000L + bw(it.first) }
+                ?: variants.minByOrNull { height(it.first)!! }
+        } else {
+            variants.filter { bw(it.first) <= capBw }.maxByOrNull { bw(it.first) } ?: variants.minByOrNull { bw(it.first) }
+        } ?: return text
+        return (head.filter { it.isNotBlank() } + pick.first + pick.second).joinToString("\n") + "\n"
+    }
+
+    private fun rewrite(text0: String, base: String): String {
+        val text = oneVariant(text0)
         val b = URI(base)
         fun abs(u: String) = runCatching { b.resolve(u.trim()).toString() }.getOrDefault(u)
+        val media = !text.contains("#EXT-X-STREAM-INF")
         return text.lineSequence().joinToString("\n") { line ->
             when {
                 line.isBlank() -> line
                 line.startsWith("#") -> uriAttr.replace(line) { m -> "URI=\"" + proxied(abs(m.groupValues[1])) + "\"" }
-                else -> proxied(abs(line))
+                else -> abs(line).let { u -> if (media && !order.contains(u)) order += u; proxied(u) }
             }
         }
     }

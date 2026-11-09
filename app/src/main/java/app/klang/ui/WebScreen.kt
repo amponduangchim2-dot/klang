@@ -199,8 +199,12 @@ fun WebScreen(w: WebHolder, onFullscreen: (Boolean) -> Unit, onBack: () -> Unit,
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         TvGlyph(K.orange)
                         Text(castMsg ?: ("on " + tv.name), style = if (castMsg != null) K.label.copy(fontSize = 12.sp) else K.name.copy(fontSize = 13.sp), maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        if (tv.kind == app.klang.cast.Tv.Kind.GOOGLE_CAST) TextKey(
+                            caster!!.tvQuality.let { q -> if (q == 0) "tv: max" else "tv: ${q}p" },
+                            { caster.cycleQuality() }, Modifier.height(36.dp).width(72.dp)
+                        )
                         TextKey(if (caster!!.playing) "pause" else "play", { caster.togglePlay() }, Modifier.height(36.dp).width(64.dp))
-                        TextKey("stop casting", { caster.stop() }, Modifier.height(36.dp).width(104.dp), orange = true)
+                        TextKey("stop", { caster.stop() }, Modifier.height(36.dp).width(60.dp), orange = true)
                     }
                 } else if (castMsg != null) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {

@@ -64,6 +64,10 @@ class Caster(context: Context) {
         private set
     var message by mutableStateOf<String?>(null)
         private set
+    /** Tallest picture sent to the TV; 0 = all the site has. */
+    var tvQuality by mutableStateOf(720)
+        private set
+    private var lastUrl: String? = null
 
     private var dlnaFound: List<Tv> = emptyList()
     private var pending: CastMedia? = null
@@ -207,7 +211,19 @@ class Caster(context: Context) {
         }
     }
 
-    private fun sendToTv(s: CastSession, url: String, media: CastMedia, fmp4: Boolean) {
+    /** 480 → 720 → 1080 → all: lower is smoother on TVs that stall. Reloads at the same moment. */
+    fun cycleQuality() {
+        tvQuality = when (tvQuality) { 480 -> 720; 720 -> 1080; 1080 -> 0; else -> 480 }
+        proxy.maxHeight = tvQuality
+        val s = cast?.sessionManager?.currentCastSession ?: return
+        val m = lastMedia ?: return
+        val u = lastUrl ?: return
+        val at = s.remoteMediaClient?.approximateStreamPosition ?: 0L
+        sendToTv(s, u, m, lastFmp4, at)
+    }
+
+    private fun sendToTv(s: CastSession, url: String, media: CastMedia, fmp4: Boolean, startMs: Long = 0L) {
+        lastUrl = url
         val hls = media.mime.contains("mpegurl", true)
         val meta = MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE).apply { putString(MediaMetadata.KEY_TITLE, media.title) }
         val b = MediaInfo.Builder(url)
@@ -221,7 +237,7 @@ class Caster(context: Context) {
         val client = s.remoteMediaClient ?: run { message = "The TV isn't ready. Try again."; return }
         client.unregisterCallback(statusCallback)
         client.registerCallback(statusCallback)
-        client.load(MediaLoadRequestData.Builder().setMediaInfo(b.build()).setAutoplay(true).build())
+        client.load(MediaLoadRequestData.Builder().setMediaInfo(b.build()).setAutoplay(true).setCurrentTime(startMs).build())
             .setResultCallback { r ->
                 main.post {
                     if (r.status.isSuccess) playing = true
@@ -234,6 +250,7 @@ class Caster(context: Context) {
         pending = null
         message = "sending to the TV…"
         io.execute {
+            proxy.maxHeight = tvQuality
             val url = runCatching { proxy.publish(media.url, media.headers) }.getOrNull()
             if (url == null) { main.post { message = "Connect the phone to the same Wi-Fi as the TV."; stop() }; return@execute }
             val code = relayWorks(url)
