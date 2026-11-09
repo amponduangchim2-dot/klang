@@ -84,8 +84,10 @@ class WebHolder(private val activity: Activity) {
         }
     }
 
+    val view: WebView by lazy { makeView() }
+
     @SuppressLint("SetJavaScriptEnabled")
-    val view: WebView by lazy {
+    private fun makeView(): WebView =
         WebView(activity).apply {
             setBackgroundColor(0xFF000000.toInt())
             settings.apply {
@@ -104,7 +106,6 @@ class WebHolder(private val activity: Activity) {
             webViewClient = Client()
             webChromeClient = Chrome()
         }
-    }
 
     // ------------------------------------------------------------------ actions
 
