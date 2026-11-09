@@ -115,6 +115,10 @@ data class UpdateUi(
     val checking: Boolean = false,
     val message: String? = null,
     val downloadUrl: String? = null,
+    /** 0..1 while the new version downloads inside the app; null otherwise. */
+    val progress: Float? = null,
+    /** Downloaded and checked: ready to hand to Android's installer. */
+    val ready: Boolean = false,
 )
 
 data class OptionsUi(
@@ -986,6 +990,34 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                 onFailure = { UpdateUi(message = "Could not reach GitHub. Check the connection and try again.") }
             ))
         }
+    }
+
+    /**
+     * Downloads the new version inside the app (no browser), picking up where it stopped when the
+     * connection drops, and checks it is a whole APK before offering to install it.
+     */
+    fun downloadUpdate(url: String) {
+        val u = _options.value.update
+        if (u.progress != null) return
+        _options.value = _options.value.copy(update = u.copy(progress = 0f, ready = false, message = "Downloading…"))
+        viewModelScope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { app.klang.update.Updater.download(getApplication(), url) { f ->
+                val cur = _options.value.update
+                if (cur.progress != null) _options.value = _options.value.copy(update = cur.copy(progress = f, message = "Downloading… ${(f * 100).toInt()}%"))
+            } } }
+            val cur = _options.value.update
+            _options.value = _options.value.copy(update = r.fold(
+                onSuccess = { cur.copy(progress = null, ready = true, message = "Downloaded. Tap install.") },
+                onFailure = { cur.copy(progress = null, ready = false, message = "Download stopped (${it.message ?: "network"}). Tap download to carry on.") }
+            ))
+        }
+    }
+
+    /** Hands the downloaded APK to Android's installer. False when Android needs the "install apps" permission first. */
+    fun installUpdate(): Boolean {
+        val ok = app.klang.update.Updater.install(getApplication())
+        if (!ok) _options.value = _options.value.copy(update = _options.value.update.copy(message = "Allow Klang Audio to install apps (switch on the page that opened), then come back and tap install."))
+        return ok
     }
 
     fun seekToMs(ms: Long) { controller?.seekTo(ms.coerceAtLeast(0L)) }

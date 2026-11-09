@@ -4,6 +4,7 @@ import app.klang.ui.components.Seam
 import app.klang.ui.components.Panel
 import android.graphics.Bitmap
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -189,6 +190,7 @@ class OptionsActions(
     val openSkins: () -> Unit,
     val checkUpdate: () -> Unit,
     val download: (String) -> Unit,
+    val install: () -> Unit = {},
     val openSource: () -> Unit,
 )
 
@@ -286,8 +288,18 @@ fun OptionsScreen(o: OptionsUi, skipTalk: Boolean, a: OptionsActions) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 TextKey(if (o.update.checking) "checking…" else "check for updates", a.checkUpdate, Modifier.weight(1f).height(40.dp))
                 val url = o.update.downloadUrl
-                if (url != null && o.update.message?.contains("available") == true) {
-                    TextKey("download", { a.download(url) }, Modifier.weight(1f).height(40.dp), orange = true)
+                val prog = o.update.progress
+                when {
+                    o.update.ready -> TextKey("install", a.install, Modifier.weight(1f).height(40.dp), orange = true)
+                    prog != null -> TextKey("${(prog * 100).toInt()}%", {}, Modifier.weight(1f).height(40.dp), active = true)
+                    url != null && o.update.message?.let { it.contains("available") || it.contains("Download stopped") } == true ->
+                        TextKey("download", { a.download(url) }, Modifier.weight(1f).height(40.dp), orange = true)
+                }
+            }
+            o.update.progress?.let { f ->
+                Spacer(Modifier.height(6.dp))
+                Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(K.ink2.copy(alpha = 0.2f))) {
+                    Box(Modifier.fillMaxWidth(f.coerceIn(0.02f, 1f)).height(4.dp).background(K.orange))
                 }
             }
             o.update.message?.let {

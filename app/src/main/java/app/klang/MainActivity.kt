@@ -604,7 +604,8 @@ class MainActivity : ComponentActivity() {
                             restore = { openBackup.launch(arrayOf("*/*")) },
                             openSkins = { cameFromOptions = true; screen = Screen.Skins },
                             checkUpdate = vm::checkForUpdate,
-                            download = { url -> openUrl(url) },
+                            download = { url -> vm.downloadUpdate(url) },
+                            install = { vm.installUpdate() },
                             openSource = { openUrl("https://github.com/amponduangchim2-dot/klang") },
                         )
                     })
