@@ -16,6 +16,7 @@ round OP-1 style keys.
 - Library: favorites, most played, history, saved lists, bookmarks
 - Web browser for films and sites with ad blocking (EasyList, EasyList Thailand, Steven Black's hosts):
   ad servers and trackers blocked, ad boxes hidden, pop-ups and unasked redirects stopped, full-screen video
+- Private mode in the web screen: a separate browser profile with no history, deleted when you leave it or close the app
 - Cast films from the web screen to a TV: Google Cast (Chromecast, Google TV) and DLNA (Samsung, LG, Sony…),
   through a relay on the phone that keeps the site's headers and adds CORS
 - Video screen: up to 4K (the best the phone decodes smoothly), real-time sharpening (contrast adaptive sharpening on the GPU)

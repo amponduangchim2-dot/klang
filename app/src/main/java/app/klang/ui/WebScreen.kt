@@ -156,7 +156,7 @@ fun WebScreen(w: WebHolder, onFullscreen: (Boolean) -> Unit, onBack: () -> Unit,
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     LcdBox(Modifier.weight(1f), padding = 10.dp) {
                         Box {
-                            if (field.isEmpty()) Text("site address or words to search", style = K.lcdText.copy(color = K.lcdDim))
+                            if (field.isEmpty()) Text(if (w.privateMode) "private · nothing is remembered" else "site address or words to search", style = K.lcdText.copy(color = K.lcdDim))
                             BasicTextField(
                                 value = field,
                                 onValueChange = { field = it; editing = true },
@@ -170,6 +170,10 @@ fun WebScreen(w: WebHolder, onFullscreen: (Boolean) -> Unit, onBack: () -> Unit,
                         }
                     }
                     androidx.compose.foundation.layout.Box(Modifier.size(46.dp)) {
+                        app.klang.ui.components.Key({ focus.clearFocus(); editing = false; w.togglePrivate(); field = w.url }, Modifier.fillMaxSize(), dark = w.privateMode,
+                            description = if (w.privateMode) "Leave private mode" else "Private mode") { c -> PrivateGlyph(c) }
+                    }
+                    androidx.compose.foundation.layout.Box(Modifier.size(46.dp)) {
                         app.klang.ui.components.Key({ w.toggleBookmark() }, Modifier.fillMaxSize(), description = if (w.isBookmarked) "Remove bookmark" else "Bookmark") { StarGlyph(w.isBookmarked) }
                     }
                     GlyphKey(Glyph.Search, { focus.clearFocus(); editing = false; w.go(field) }, Modifier.size(46.dp), orange = true, description = "Go")
@@ -179,10 +183,12 @@ fun WebScreen(w: WebHolder, onFullscreen: (Boolean) -> Unit, onBack: () -> Unit,
             // ---- the page
             Tile(Modifier.fillMaxWidth().weight(1f), padding = 4.dp) {
                 Box(Modifier.fillMaxSize().clip(RoundedCornerShape(6.dp)).background(Color.Black)) {
-                    AndroidView(
-                        factory = { w.view.also { v -> (v.parent as? ViewGroup)?.removeView(v) } },
-                        modifier = Modifier.fillMaxSize()
-                    )
+                    androidx.compose.runtime.key(w.privateMode) {
+                        AndroidView(
+                            factory = { w.view.also { v -> (v.parent as? ViewGroup)?.removeView(v) } },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                     if (w.url.isEmpty()) StartPage(w) { focus.clearFocus(); editing = false; w.go(it.url) }
                     if (w.progress < 100 && w.url.isNotEmpty()) {
                         Box(Modifier.fillMaxWidth(w.progress / 100f).height(3.dp).background(K.orange))
@@ -289,7 +295,13 @@ private fun StartPage(w: WebHolder, open: (WebPage) -> Unit) {
             items(w.bookmarks, key = { "b" + it.url }) { p -> PageRow(p, open) { w.removeBookmark(p) } }
             item { Spacer(Modifier.height(10.dp)) }
         }
-        if (w.history.isNotEmpty()) {
+        if (w.privateMode) {
+            item {
+                Text("private mode", style = K.lcdText.copy(color = K.orange))
+                Spacer(Modifier.height(4.dp))
+                Text("No history. Logins, cookies and site data stay in this session only and are deleted when you leave private mode or close the app.", style = K.lcdSmall.copy(fontSize = 12.sp))
+            }
+        } else if (w.history.isNotEmpty()) {
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("recent", style = K.lcdText.copy(color = K.orange), modifier = Modifier.weight(1f))
@@ -455,5 +467,21 @@ private fun TvGlyph(color: Color) {
         val u = size.minDimension / 24f
         drawRoundRect(color, Offset(2.5f * u, 4 * u), Size(19 * u, 13 * u), androidx.compose.ui.geometry.CornerRadius(2 * u), style = Stroke(2.2f * u))
         drawLine(color, Offset(8 * u, 20.5f * u), Offset(16 * u, 20.5f * u), 2.2f * u, StrokeCap.Round)
+    }
+}
+
+
+/** Glasses and a hat: private mode. */
+@Composable
+private fun PrivateGlyph(color: Color) {
+    Canvas(Modifier.size(20.dp)) {
+        val u = size.minDimension / 24f
+        val st = Stroke(2f * u, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        drawLine(color, Offset(2.5f * u, 11f * u), Offset(21.5f * u, 11f * u), 2f * u, StrokeCap.Round)
+        val hat = Path().apply { moveTo(6f * u, 11f * u); lineTo(8f * u, 4.5f * u); lineTo(16f * u, 4.5f * u); lineTo(18f * u, 11f * u) }
+        drawPath(hat, color, style = st)
+        drawCircle(color, 3.4f * u, Offset(7.5f * u, 17f * u), style = st)
+        drawCircle(color, 3.4f * u, Offset(16.5f * u, 17f * u), style = st)
+        drawLine(color, Offset(10.9f * u, 17f * u), Offset(13.1f * u, 17f * u), 2f * u, StrokeCap.Round)
     }
 }

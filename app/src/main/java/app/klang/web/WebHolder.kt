@@ -83,18 +83,70 @@ class WebHolder(private val activity: Activity) {
 
     val blockingHere: Boolean get() = adblockOn && AdBlocker.siteOf(Uri.parse(url).host) !in allowedSites
 
+    /**
+     * Private mode: a separate browser profile (own cookies, logins, storage and cache) that keeps
+     * no history and is deleted when private mode is switched off or the app closes. The normal
+     * profile's logins are not touched. Phones whose WebView is too old for profiles fall back to
+     * no cookies while private.
+     */
+    var privateMode by mutableStateOf(prefs.getBoolean("webPrivate", false))
+        private set
+    private val profiles = runCatching {
+        androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.MULTI_PROFILE)
+    }.getOrDefault(false)
+    private var normalView: WebView? = null
+    private var privateView: WebView? = null
+
     init {
+        // a private profile left behind by a crash or a killed app goes now
+        if (profiles) runCatching { androidx.webkit.ProfileStore.getInstance().deleteProfile(PRIVATE_PROFILE) }
         io.execute {
             AdBlocker.load(activity.applicationContext)
             AdBlocker.updateIfDue(activity.applicationContext)
         }
     }
 
-    val view: WebView by lazy { makeView() }
+    /** The browser in use: the private one while private mode is on. */
+    val view: WebView
+        get() = if (privateMode) privateView ?: makeView(true).also { privateView = it }
+        else normalView ?: makeView(false).also { normalView = it }
+
+    /** Switches private mode. Leaving it deletes everything the private profile held. */
+    fun togglePrivate() {
+        if (fullView != null) exitFullscreen()
+        if (privateMode) {
+            privateView?.let { v -> runCatching { v.stopLoading(); (v.parent as? android.view.ViewGroup)?.removeView(v); v.destroy() } }
+            privateView = null
+            wipePrivate()
+            privateMode = false
+        } else {
+            normalView?.onPause()
+            privateMode = true
+        }
+        prefs.edit().putBoolean("webPrivate", privateMode).apply()
+        if (!profiles) CookieManager.getInstance().setAcceptCookie(!privateMode)
+        // show the state of the browser now in front
+        val v = view
+        v.onResume()
+        url = v.url?.takeIf { it != "about:blank" }.orEmpty()
+        title = v.title.orEmpty()
+        pageHost = Uri.parse(url).host
+        blockedCount = 0; stopped = null; media = emptyList(); progress = 100
+        sync(v)
+    }
+
+    private fun wipePrivate() {
+        if (profiles) runCatching { androidx.webkit.ProfileStore.getInstance().deleteProfile(PRIVATE_PROFILE) }
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
-    private fun makeView(): WebView =
+    private fun makeView(isPrivate: Boolean): WebView =
         WebView(activity).apply {
+            if (isPrivate && profiles) runCatching {
+                androidx.webkit.ProfileStore.getInstance().getOrCreateProfile(PRIVATE_PROFILE)
+                androidx.webkit.WebViewCompat.setProfile(this, PRIVATE_PROFILE)
+            }
+            if (isPrivate) settings.cacheMode = WebSettings.LOAD_NO_CACHE.takeIf { !profiles } ?: WebSettings.LOAD_DEFAULT
             setBackgroundColor(0xFF000000.toInt())
             settings.apply {
                 javaScriptEnabled = true
@@ -108,7 +160,7 @@ class WebHolder(private val activity: Activity) {
                 displayZoomControls = false
                 mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
             }
-            CookieManager.getInstance().setAcceptCookie(true)
+            CookieManager.getInstance().setAcceptCookie(!(isPrivate && !profiles))
             webViewClient = Client()
             webChromeClient = Chrome()
             // in every frame (players usually sit in an iframe): long films carry on where they were left
@@ -118,6 +170,7 @@ class WebHolder(private val activity: Activity) {
         }
 
     private companion object {
+        const val PRIVATE_PROFILE = "klang-private"
         const val RESUME_JS = """(function(){
  if (window.__klangPos) return; window.__klangPos = 1;
  var K = 'klang-pos:' + location.href.split('#')[0];
@@ -207,7 +260,11 @@ class WebHolder(private val activity: Activity) {
     fun resume() { view.onResume() }
     fun destroy() {
         if (casterMade) runCatching { caster.release() }
-        io.shutdownNow(); runCatching { view.destroy() }
+        io.shutdownNow()
+        runCatching { normalView?.destroy() }
+        runCatching { privateView?.destroy() }
+        privateView = null
+        wipePrivate()   // closing the app ends the private session
     }
     fun useCaster(): app.klang.cast.Caster { casterMade = true; return caster }
 
@@ -225,7 +282,7 @@ class WebHolder(private val activity: Activity) {
     }
 
     private fun remember(p: WebPage) {
-        if (!p.url.startsWith("http")) return
+        if (privateMode || !p.url.startsWith("http")) return
         history = (listOf(p) + history.filterNot { it.url == p.url }).take(20)
         savePages("webHistory", history)
     }
@@ -335,6 +392,7 @@ class WebHolder(private val activity: Activity) {
         }
 
         override fun onPageStarted(v: WebView, u: String, favicon: Bitmap?) {
+            if (v !== view) return
             if (u == "about:blank") return
             val host = Uri.parse(u).host
             if (AdBlocker.siteOf(host) != AdBlocker.siteOf(pageHost)) blockedCount = 0
@@ -348,6 +406,7 @@ class WebHolder(private val activity: Activity) {
         override fun onPageCommitVisible(v: WebView, u: String) { injectCss(v, u) }
 
         override fun onPageFinished(v: WebView, u: String) {
+            if (v !== view) return
             if (u == "about:blank") return
             injectCss(v, u)
             scanVideoTags(v)
@@ -358,6 +417,7 @@ class WebHolder(private val activity: Activity) {
         }
 
         override fun doUpdateVisitedHistory(v: WebView, u: String, isReload: Boolean) {
+            if (v !== view) return
             if (u != "about:blank") url = u
             sync(v)
         }
@@ -376,8 +436,8 @@ class WebHolder(private val activity: Activity) {
     }
 
     private inner class Chrome : WebChromeClient() {
-        override fun onProgressChanged(v: WebView, newProgress: Int) { progress = newProgress }
-        override fun onReceivedTitle(v: WebView, t: String?) { if (!t.isNullOrBlank()) title = t }
+        override fun onProgressChanged(v: WebView, newProgress: Int) { if (v === view) progress = newProgress }
+        override fun onReceivedTitle(v: WebView, t: String?) { if (v === view && !t.isNullOrBlank()) title = t }
 
         /** Pop-ups: let a throwaway view catch the address, then show it on a chip instead. */
         override fun onCreateWindow(v: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
