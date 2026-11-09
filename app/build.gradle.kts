@@ -12,8 +12,8 @@ android {
         applicationId = "app.klang.player"
         minSdk = 26
         targetSdk = 35
-        versionCode = 27
-        versionName = "1.5.3"
+        versionCode = 28
+        versionName = "1.5.4"
     }
 
     // The release key never lives in the repository. CI writes it from GitHub Secrets

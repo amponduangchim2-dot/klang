@@ -44,6 +44,8 @@ class StreamProxy(private val context: Context) {
 
     /** Tallest picture to give the TV (0 = whatever the site offers). One quality only: switching mid-film makes TVs stall. */
     @Volatile var maxHeight = 720
+    /** Simple mode: the playlist as the site gives it, nothing fetched ahead (if the TV trips on the smart mode). */
+    @Volatile var compat = false
 
     // ---- pieces of the film, fetched ahead so the TV never waits on the website
     private val order = java.util.Collections.synchronizedList(ArrayList<String>())
@@ -51,7 +53,7 @@ class StreamProxy(private val context: Context) {
         override fun removeEldestEntry(e: MutableMap.MutableEntry<String, Pair<ByteArray, String>>?) = size > 10
     }
     private val inFlight = java.util.Collections.synchronizedSet(HashSet<String>())
-    private val ahead = Executors.newFixedThreadPool(2)
+    private val ahead = Executors.newSingleThreadExecutor()
     @Volatile var lastProblem: String? = null
 
     /** Starts (or re-targets) the relay and returns the TV-facing address of [url]. */
@@ -176,7 +178,7 @@ class StreamProxy(private val context: Context) {
             status(out, 403, "Forbidden", listOf("Content-Length: 0")); return
         }
 
-        if (method == "GET" && reqHeaders["range"] == null && order.contains(target)) {
+        if (!compat && method == "GET" && reqHeaders["range"] == null && order.contains(target)) {
             val piece = synchronized(cache) { cache[target] } ?: fetchPiece(target)
             if (piece != null) {
                 synchronized(cache) { cache[target] = piece }
@@ -277,7 +279,7 @@ class StreamProxy(private val context: Context) {
         val i = order.indexOf(target)
         if (i < 0) return
         val tok = token
-        for (k in 1..4) {
+        for (k in 1..3) {
             val next = order.getOrNull(i + k) ?: break
             if (synchronized(cache) { cache.containsKey(next) } || !inFlight.add(next)) continue
             ahead.execute {
@@ -327,7 +329,7 @@ class StreamProxy(private val context: Context) {
 
     /** A master playlist keeps one quality: the tallest within [maxHeight]. */
     private fun oneVariant(text: String): String {
-        if (!text.contains("#EXT-X-STREAM-INF") || maxHeight == 0) return text
+        if (!text.contains("#EXT-X-STREAM-INF") || maxHeight == 0 || compat) return text
         val lines = text.lines()
         val head = mutableListOf<String>()
         val variants = mutableListOf<Pair<String, String>>()

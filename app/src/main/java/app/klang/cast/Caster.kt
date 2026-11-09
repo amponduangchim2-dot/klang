@@ -175,6 +175,8 @@ class Caster(context: Context) {
     private var lastMedia: CastMedia? = null
     private var lastFmp4 = false
     private var triedDirect = false
+    /** 0 = through the phone, 1 = through the phone in simple mode, 2 = the site's own address. */
+    private var stage = 0
     private var lastTvError: Int? = null
 
     private fun diagnosis(): String {
@@ -199,11 +201,19 @@ class Caster(context: Context) {
                 st.idleReason == com.google.android.gms.cast.MediaStatus.IDLE_REASON_ERROR) {
                 val m = lastMedia
                 val s = cast?.sessionManager?.currentCastSession
-                if (!triedDirect && m != null && s != null) {
+                val at = st.streamPosition.coerceAtLeast(0L)
+                if (stage == 0 && m != null && s != null && lastUrl != null) {
+                    // second try through the phone, the plain way: every quality the site has, no fetching ahead
+                    stage = 1
+                    proxy.compat = true
+                    message = "trying again (simple mode)…"
+                    sendToTv(s, lastUrl!!, m, lastFmp4, at)
+                } else if (stage <= 1 && m != null && s != null) {
                     // through the phone did not work: let the TV fetch the site's address itself
+                    stage = 2
                     triedDirect = true
                     message = "trying the direct link…"
-                    sendToTv(s, m.url, m, lastFmp4)
+                    sendToTv(s, m.url, m, lastFmp4, at)
                 } else {
                     message = "The TV could not play this stream (${diagnosis()}). Try another server on the site, or mirror the screen."
                 }
@@ -215,6 +225,8 @@ class Caster(context: Context) {
     fun cycleQuality() {
         tvQuality = when (tvQuality) { 480 -> 720; 720 -> 1080; 1080 -> 0; else -> 480 }
         proxy.maxHeight = tvQuality
+        proxy.compat = false
+        stage = 0
         val s = cast?.sessionManager?.currentCastSession ?: return
         val m = lastMedia ?: return
         val u = lastUrl ?: return
@@ -251,6 +263,7 @@ class Caster(context: Context) {
         message = "sending to the TV…"
         io.execute {
             proxy.maxHeight = tvQuality
+            proxy.compat = false
             val url = runCatching { proxy.publish(media.url, media.headers) }.getOrNull()
             if (url == null) { main.post { message = "Connect the phone to the same Wi-Fi as the TV."; stop() }; return@execute }
             val code = relayWorks(url)
@@ -265,7 +278,7 @@ class Caster(context: Context) {
             val hls = media.mime.contains("mpegurl", true)
             val fmp4 = hls && hlsIsFmp4(media)
             main.post {
-                lastMedia = media; lastFmp4 = fmp4; triedDirect = false; lastTvError = null
+                lastMedia = media; lastFmp4 = fmp4; triedDirect = false; lastTvError = null; stage = 0
                 sendToTv(s, url, media, fmp4)
             }
         }
