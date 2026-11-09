@@ -66,6 +66,7 @@ class StreamProxy(private val context: Context) {
             pool.execute { acceptLoop(s) }
         }
         token = randomToken()
+        doc = null
         order.clear(); synchronized(cache) { cache.clear() }
         tvRequests = 0
         lastProblem = null
@@ -74,6 +75,25 @@ class StreamProxy(private val context: Context) {
         hosts.clear()
         URL(url).host?.let { hosts += it.lowercase() }
         return "http://$ip:${server!!.localPort}/$token/${encode(url)}${extensionOf(url)}"
+    }
+
+    /** A file made on the phone (a DASH manifest) whose [sources] the TV fetches through the relay. */
+    @Volatile private var doc: Pair<ByteArray, String>? = null
+    @Volatile private var docSources: List<String> = emptyList()
+    /** The relayed address of source [i] of the last manifest. */
+    fun publishedSource(i: Int): String? = docSources.getOrNull(i)
+
+    /**
+     * Publishes a manifest made by [make] from the relayed addresses of [sources].
+     * Returns the TV-facing address of the manifest.
+     */
+    @Synchronized
+    fun publishDoc(sources: List<String>, h: Headers, ext: String, mime: String, make: (List<String>) -> String): String? {
+        publish(sources.firstOrNull() ?: return null, h) ?: return null
+        val relayed = sources.map { proxied(it) }
+        docSources = relayed
+        doc = make(relayed).toByteArray() to mime
+        return "http://$ipNow:${server!!.localPort}/$token/doc$ext"
     }
 
     @Synchronized
@@ -172,6 +192,12 @@ class StreamProxy(private val context: Context) {
         if (method == "OPTIONS") { status(out, 204, "No Content", cors() + listOf("Content-Length: 0")); return }
         val seg = path.trimStart('/').split('/', limit = 2)
         if (seg.size < 2 || seg[0] != token || token.isEmpty()) { status(out, 403, "Forbidden", listOf("Content-Length: 0")); return }
+        doc?.takeIf { seg[1].startsWith("doc.") }?.let { d ->
+            status(out, 200, "OK", cors() + listOf("Content-Type: ${d.second}", "Content-Length: ${d.first.size}", "Cache-Control: no-cache"))
+            if (method != "HEAD") out.write(d.first)
+            out.flush()
+            return
+        }
         val target = decode(seg[1].substringBefore('.').substringBefore('?')) ?: run { status(out, 400, "Bad Request", listOf("Content-Length: 0")); return }
         val host = runCatching { URL(target).host.lowercase() }.getOrNull()
         if (host == null || host !in hosts || !(target.startsWith("http://") || target.startsWith("https://"))) {

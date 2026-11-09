@@ -15,16 +15,19 @@ round OP-1 style keys.
 - Video deck: watch clips in HD (up to the best quality the phone can decode) and live streams, full screen
 - Library: favorites, most played, history, saved lists, bookmarks
 - Web browser for films and sites with ad blocking (EasyList, EasyList Thailand, Steven Black's hosts):
-  ad servers and trackers blocked, ad boxes hidden, pop-ups and unasked redirects stopped, full-screen video
+  ad servers and trackers blocked, ad boxes hidden, pop-ups and unasked redirects stopped, full-screen video;
+  tap a banner the lists miss to hide it on that site for good
 - Private mode in the web screen: a separate browser profile with no history, deleted when you leave it or close the app
 - Cast films from the web screen to a TV: Google Cast (Chromecast, Google TV) and DLNA (Samsung, LG, Sony…),
-  through a relay on the phone that keeps the site's headers and adds CORS
+  through a relay on the phone that keeps the site's headers and adds CORS; YouTube clips cast from the video
+  screen (DASH up to 1080p made on the phone, live streams as HLS); the phone is the TV's remote (scale to seek,
+  −10/+10, play/pause)
 - Video screen: up to 4K (the best the phone decodes smoothly), real-time sharpening (contrast adaptive sharpening on the GPU)
-- Picture in picture for the video and web screens; double-tap to skip, slide for volume and light in full screen;
+- Picture in picture for the video and web screens (the web window shows only the film); double-tap to skip, slide for volume and light in full screen;
   long films and clips carry on where they were left
 - An EQ for each output (car, headphones, speaker); play when Bluetooth connects; launcher shortcuts;
   backup and restore of settings, EQ, playlists and library
-- Synced lyrics from LRCLIB
+- Loudness leveling: songs and clips play at an even loudness (slow, gentle gain under the limiter)
 - Skins, share card (square / story), sleep timer, fade between songs, big controls
 - Android Auto (browse, voice, search of the phone and YouTube) with OP-1 screen covers, the clip's picture for
   YouTube tracks, and car buttons (favorite, shuffle, repeat, EQ preset); home-screen turntable widget, in-app update check

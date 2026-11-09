@@ -65,7 +65,35 @@ class KlangAudioProcessor : BaseAudioProcessor() {
         return inputAudioFormat
     }
 
+    // ---- loudness leveling: songs from different sources come out at about the same loudness.
+    // Short-term loudness (high-passed, silence ignored) over ~3 s; the gain moves slowly toward
+    // a target and stays within -12..+9 dB, so music keeps its own dynamics. The limiter catches peaks.
+    private var levelGain = 1f
+    private var levelMs = -1.0          // running mean square, -1 = nothing measured yet
+    private var hpPrev = 0f
+    private var hpOut = 0f
+    private var blockSum = 0.0
+    private var blockFrames = 0
+    private var sinceStart = 0          // blocks since the last seek or track change
+
+    private fun levelBlock() {
+        val ms = blockSum / blockFrames.coerceAtLeast(1)
+        blockSum = 0.0; blockFrames = 0
+        sinceStart++
+        if (ms < 1e-5) return            // below about -50 dBFS: silence, leave the gain alone
+        val fast = sinceStart < 25        // the first 2.5 s of a song: settle quickly
+        val k = if (fast) 0.25 else 0.033 // ~0.4 s or ~3 s window, in 100 ms blocks
+        levelMs = if (levelMs < 0) ms else levelMs + (ms - levelMs) * k
+        val nowDb = 10.0 * log10(levelMs)
+        val wantDb = (AudioEngine.LEVEL_TARGET_DB - nowDb).coerceIn(-12.0, 9.0)
+        val curDb = 20.0 * log10(levelGain.toDouble())
+        val step = if (fast) 0.6 else 0.15 // dB per 100 ms
+        val nextDb = curDb + (wantDb - curDb).coerceIn(-step, step)
+        levelGain = 10.0.pow(nextDb / 20.0).toFloat()
+    }
+
     override fun onFlush() {
+        levelMs = -1.0; sinceStart = 0; blockSum = 0.0; blockFrames = 0
         channels = inputAudioFormat.channelCount
         sampleRate = inputAudioFormat.sampleRate
         z1 = Array(channels) { FloatArray(n) }
@@ -127,7 +155,11 @@ class KlangAudioProcessor : BaseAudioProcessor() {
         val filter = eqOn && anyBand
         val pre = preGain
 
-        val processing = filter || pre != 1f || bal != 0f
+        val level = AudioEngine.levelOn
+        if (!level) levelGain = 1f
+        val processing = filter || pre != 1f || bal != 0f || level
+        val blockLen = (sampleRate / 10).coerceAtLeast(1)
+        val hpA = 0.98f
         if (release == 0f) release = 1f - kotlin.math.exp(-1.0 / (0.15 * sampleRate)).toFloat()
         var minGain = 1f
         for (frame in 0 until frames) {
@@ -143,9 +175,11 @@ class KlangAudioProcessor : BaseAudioProcessor() {
                 continue
             }
             var peak = 0f
+            var dry = 0f
             for (c in 0 until ch) {
                 var x = inputBuffer.short / 32768f
-                x *= pre
+                dry += x
+                x *= pre * levelGain
                 if (filter) {
                     val s1 = z1[c]
                     val s2 = z2[c]
@@ -161,6 +195,13 @@ class KlangAudioProcessor : BaseAudioProcessor() {
                 if (c < 8) frameBuf[c] = x
                 val ax = if (x < 0f) -x else x
                 if (ax > peak) peak = ax
+            }
+            if (level) {
+                // measure the music as it comes in (before EQ), high-passed so deep bass weighs less
+                val m = dry / ch
+                hpOut = hpA * (hpOut + m - hpPrev); hpPrev = m
+                blockSum += (hpOut * hpOut).toDouble(); blockFrames++
+                if (blockFrames >= blockLen) levelBlock()
             }
             // limiter
             val need = if (peak * limGain > ceiling) ceiling / peak else 1f

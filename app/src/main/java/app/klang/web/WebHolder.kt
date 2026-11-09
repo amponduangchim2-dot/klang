@@ -162,15 +162,134 @@ class WebHolder(private val activity: Activity) {
             }
             CookieManager.getInstance().setAcceptCookie(!(isPrivate && !profiles))
             webViewClient = Client()
+            // banner picking: while on, a tap chooses the thing under the finger instead of clicking it
+            @SuppressLint("ClickableViewAccessibility")
+            setOnTouchListener { v, e ->
+                if (!picking) return@setOnTouchListener false
+                if (e.action == android.view.MotionEvent.ACTION_UP) {
+                    @Suppress("DEPRECATION")
+                    val sc = (v as WebView).scale.takeIf { it > 0f } ?: v.resources.displayMetrics.density
+                    pickAt(e.x / sc, e.y / sc)
+                }
+                true
+            }
             webChromeClient = Chrome()
             // in every frame (players usually sit in an iframe): long films carry on where they were left
             if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)) {
                 runCatching { androidx.webkit.WebViewCompat.addDocumentStartJavaScript(this, RESUME_JS, setOf("*")) }
+                runCatching { androidx.webkit.WebViewCompat.addDocumentStartJavaScript(this, PIP_JS, setOf("*")) }
             }
         }
 
     private companion object {
         const val PRIVATE_PROFILE = "klang-private"
+
+        /** Finds the banner under a point, outlines it in red and describes it with a CSS selector. */
+        const val PICK_JS = """(function(){
+ if (window.__klangPick) return;
+ function esc(s) { return (window.CSS && CSS.escape) ? CSS.escape(s) : s.replace(/[^a-zA-Z0-9_-]/g, '\\$&'); }
+ function area(e) { var r = e.getBoundingClientRect(); return r.width * r.height; }
+ function stable(k) { return !/\d{3,}/.test(k) && k.indexOf('klang') < 0; }
+ function sel(e) {
+  if (e.id && stable(e.id)) return '#' + esc(e.id);
+  var tag = e.tagName.toLowerCase();
+  if (tag === 'img' && e.getAttribute('src')) { var f = e.getAttribute('src').split('?')[0].split('/').pop(); if (f) return 'img[src*="' + f.replace(/"/g, '') + '"]'; }
+  if (tag === 'iframe' && e.src) { try { return 'iframe[src*="' + new URL(e.src).host + '"]'; } catch (x) {} }
+  if (tag === 'a' && e.getAttribute('href') && e.getAttribute('href').length < 200 && e.getAttribute('href').indexOf('"') < 0) return 'a[href="' + e.getAttribute('href') + '"]';
+  var path = [], c = e;
+  while (c && c !== document.body && path.length < 5) {
+   if (c.id && stable(c.id)) { path.unshift('#' + esc(c.id)); break; }
+   var s = c.tagName.toLowerCase();
+   var cls = [].slice.call(c.classList).filter(stable).slice(0, 2);
+   if (cls.length) s += '.' + cls.map(esc).join('.');
+   var p = c.parentElement;
+   if (p) { var same = [].filter.call(p.children, function(k){ return k.tagName === c.tagName; }); if (same.length > 1) s += ':nth-of-type(' + (same.indexOf(c) + 1) + ')'; }
+   path.unshift(s); c = p;
+  }
+  return path.join(' > ');
+ }
+ function show(t) {
+  document.querySelectorAll('.klang-pick').forEach(function(e){ e.classList.remove('klang-pick'); });
+  if (!document.getElementById('klang-pick-css')) {
+   var st = document.createElement('style'); st.id = 'klang-pick-css';
+   st.textContent = '.klang-pick{outline:3px solid #F01E14!important;outline-offset:-3px!important;box-shadow:inset 0 0 0 2000px rgba(240,30,20,.28)!important}';
+   (document.head || document.documentElement).appendChild(st);
+  }
+  t.classList.add('klang-pick'); window.__klangPicked = t;
+  var r = t.getBoundingClientRect();
+  return JSON.stringify({ sel: sel(t), w: Math.round(r.width), h: Math.round(r.height), tag: t.tagName.toLowerCase() });
+ }
+ window.__klangPick = function(x, y) {
+  var t = document.elementFromPoint(x, y); if (!t || t === document.body || t === document.documentElement) return null;
+  for (var i = 0; i < 3 && t.parentElement && t.parentElement !== document.body; i++) {
+   var pr = t.parentElement.getBoundingClientRect(), tr = t.getBoundingClientRect();
+   if (pr.height > tr.height * 1.6 + 8 || pr.width > tr.width * 1.6 + 8) break;
+   t = t.parentElement;
+  }
+  var a = t.closest ? t.closest('a') : null;
+  if (a && area(a) < area(document.body) * 0.5) t = a;
+  return show(t);
+ };
+ window.__klangPickUp = function() {
+  var t = window.__klangPicked; if (!t || !t.parentElement || t.parentElement === document.body) return null;
+  return show(t.parentElement);
+ };
+})()"""
+
+        /**
+         * Floating window: the film alone. The frame holding the playing video blows it up to fill
+         * the window and hides the rest of its page; a frame that holds that frame does the same
+         * with the frame, up to the top. Undone when the window opens up again.
+         */
+        const val PIP_JS = """(function(){
+ if (window.__klangPip) return;
+ var marked = [];
+ function css(on) {
+  var d = document, s = d.getElementById('klang-pip-css');
+  if (on && !s) {
+   s = d.createElement('style'); s.id = 'klang-pip-css';
+   s.textContent = 'html.klang-pip,html.klang-pip body{background:#000!important;overflow:hidden!important}' +
+    'html.klang-pip body *{visibility:hidden!important}' +
+    'html.klang-pip .klang-pip-el,html.klang-pip .klang-pip-el *{visibility:visible!important}' +
+    'html.klang-pip .klang-pip-up{transform:none!important;filter:none!important;contain:none!important;will-change:auto!important}' +
+    'html.klang-pip .klang-pip-el{position:fixed!important;left:0!important;top:0!important;right:0!important;bottom:0!important;width:100vw!important;height:100vh!important;max-width:none!important;max-height:none!important;margin:0!important;padding:0!important;border:0!important;transform:none!important;z-index:2147483647!important;background:#000!important;object-fit:contain!important}';
+   (d.head || d.documentElement).appendChild(s);
+  }
+  if (on) d.documentElement.classList.add('klang-pip'); else d.documentElement.classList.remove('klang-pip');
+ }
+ function mark(el) {
+  el.classList.add('klang-pip-el'); marked.push(el);
+  for (var p = el.parentElement; p && p !== document.documentElement; p = p.parentElement) { p.classList.add('klang-pip-up'); marked.push(p); }
+ }
+ function clear() { marked.forEach(function(el){ el.classList.remove('klang-pip-el'); el.classList.remove('klang-pip-up'); }); marked = []; }
+ function best() {
+  var b = null, bs = 0;
+  [].slice.call(document.querySelectorAll('video')).forEach(function(v){
+   var r = v.getBoundingClientRect(), sc = r.width * r.height + (v.paused ? 0 : 1e9) + (v.readyState > 0 ? 1e6 : 0);
+   if (sc > bs) { bs = sc; b = v; }
+  });
+  return b;
+ }
+ function tellParent() { if (window.parent !== window) try { window.parent.postMessage({ klangPipHas: 1 }, '*'); } catch (e) {} }
+ function apply(on) {
+  clear();
+  var v = on ? best() : null;
+  if (v) { css(true); mark(v); tellParent(); }
+  else {
+   if (!on) css(false);
+   for (var i = 0; i < window.frames.length; i++) try { window.frames[i].postMessage({ klangPip: 1, on: !!on }, '*'); } catch (e) {}
+  }
+ }
+ window.addEventListener('message', function(e){
+  var d = e.data; if (!d || typeof d !== 'object') return;
+  if (d.klangPip) apply(d.on);
+  else if (d.klangPipHas) {
+   var fs = document.querySelectorAll('iframe');
+   for (var i = 0; i < fs.length; i++) if (fs[i].contentWindow === e.source) { css(true); mark(fs[i]); tellParent(); }
+  }
+ });
+ window.__klangPip = apply;
+})();"""
         const val RESUME_JS = """(function(){
  if (window.__klangPos) return; window.__klangPos = 1;
  var K = 'klang-pos:' + location.href.split('#')[0];
@@ -259,14 +378,13 @@ class WebHolder(private val activity: Activity) {
     }
     fun resume() { view.onResume() }
     fun destroy() {
-        if (casterMade) runCatching { caster.release() }
         io.shutdownNow()
         runCatching { normalView?.destroy() }
         runCatching { privateView?.destroy() }
         privateView = null
         wipePrivate()   // closing the app ends the private session
     }
-    fun useCaster(): app.klang.cast.Caster { casterMade = true; return caster }
+    fun useCaster(): app.klang.cast.Caster = caster
 
     // ------------------------------------------------------------------ pages lists
 
@@ -325,10 +443,81 @@ class WebHolder(private val activity: Activity) {
         }
     }
 
+    // ------------------------------------------------------------------ hide a banner by hand
+
+    /** Choosing a banner to hide: the next tap on the page picks what is under the finger. */
+    var picking by mutableStateOf(false)
+        private set
+    /** What was picked: a CSS selector and a short description, or null. */
+    var picked by mutableStateOf<Pair<String, String>?>(null)
+        private set
+
+    private fun site(): String = AdBlocker.siteOf(Uri.parse(url).host)
+    private fun rulesFor(site: String): Set<String> = prefs.getStringSet("webHide:$site", emptySet())!!
+    val hiddenHere: Int get() = rulesFor(site()).size
+
+    private fun userCss(host: String?): String {
+        val rules = rulesFor(AdBlocker.siteOf(host))
+        return if (rules.isEmpty()) "" else rules.joinToString("\n") { "$it{display:none!important}" }
+    }
+
+    fun startPicking() { picked = null; picking = true }
+
+    fun cancelPicking() {
+        picking = false; picked = null
+        runCatching { view.evaluateJavascript("document.querySelectorAll('.klang-pick').forEach(function(e){e.classList.remove('klang-pick')})", null) }
+    }
+
+    private fun pickResult(json: String?) {
+        val o = runCatching { JSONObject(JSONArray("[${json ?: "null"}]").getString(0)) }.getOrNull() ?: return
+        val sel = o.optString("sel").takeIf { it.isNotBlank() } ?: return
+        picked = sel to "${o.optString("tag")} · ${o.optInt("w")}×${o.optInt("h")}"
+    }
+
+    private fun pickAt(x: Float, y: Float) {
+        runCatching { view.evaluateJavascript("$PICK_JS;window.__klangPick($x,$y)") { pickResult(it) } }
+    }
+
+    /** The picked thing was only part of the banner: take the box around it. */
+    fun pickBigger() {
+        runCatching { view.evaluateJavascript("$PICK_JS;window.__klangPickUp()") { pickResult(it) } }
+    }
+
+    /** Hides the picked banner on this site from now on. */
+    fun hidePicked() {
+        val sel = picked?.first ?: return
+        val site = site()
+        if (site.isNotEmpty()) prefs.edit().putStringSet("webHide:$site", rulesFor(site) + sel).apply()
+        picking = false; picked = null
+        runCatching {
+            view.evaluateJavascript("document.querySelectorAll('.klang-pick').forEach(function(e){e.classList.remove('klang-pick')});" +
+                "(function(){var s=document.createElement('style');s.textContent=" + JSONObject.quote("$sel{display:none!important}") + ";(document.head||document.documentElement).appendChild(s);})()", null)
+        }
+        blockedCount++
+    }
+
+    /** Shows again everything hidden by hand on this site. */
+    fun unhideAllHere() {
+        val site = site()
+        if (site.isEmpty()) return
+        prefs.edit().remove("webHide:$site").apply()
+        picking = false; picked = null
+        reload()
+    }
+
+    /** Small floating window: show only the film on the page (or the whole page again). */
+    fun focusFilm(on: Boolean) {
+        runCatching { view.evaluateJavascript("$PIP_JS;window.__klangPip && window.__klangPip($on);", null) }
+    }
+
+    /** Pauses every video and sound on the page (e.g. when the film goes to the TV). */
+    fun pauseMedia() {
+        runCatching { view.evaluateJavascript("document.querySelectorAll('video,audio').forEach(function(m){try{m.pause()}catch(e){}})", null) }
+    }
+
     /** Sends films to a TV. Made when first needed. */
-    val caster: app.klang.cast.Caster by lazy { app.klang.cast.Caster(activity) }
-    private var casterMade = false
-    val hasCaster: Boolean get() = casterMade
+    val caster: app.klang.cast.Caster get() = app.klang.cast.Caster.get(activity)
+    val hasCaster: Boolean get() = app.klang.cast.Caster.peek() != null
 
     /** Looks again for videos, e.g. after the film has started. */
     fun rescan() { scanVideoTags(view) }
@@ -424,10 +613,10 @@ class WebHolder(private val activity: Activity) {
     }
 
     private fun injectCss(v: WebView, u: String) {
-        if (!filtering || !AdBlocker.ready) return
+        if (!filtering) return
         val host = Uri.parse(u).host
         io.execute {
-            val css = AdBlocker.css(host)
+            val css = (if (AdBlocker.ready) AdBlocker.css(host) else "") + "\n" + userCss(host)
             val js = "(function(){var id='klang-adblock';var s=document.getElementById(id);" +
                 "if(!s){s=document.createElement('style');s.id=id;(document.head||document.documentElement).appendChild(s);}" +
                 "s.textContent=" + JSONObject.quote(css) + ";})();"

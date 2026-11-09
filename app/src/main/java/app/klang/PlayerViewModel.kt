@@ -124,6 +124,7 @@ data class OptionsUi(
     val keepScreenOn: Boolean = false,
     val ytOpus: Boolean = true,
     val eqPerDevice: Boolean = true,
+    val levelOn: Boolean = true,
     val autoPlayBt: Boolean = false,
     val outputName: String = "",
     val versionName: String = "",
@@ -853,6 +854,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             keepScreenOn = prefs.getBoolean("keepScreenOn", false),
             ytOpus = prefs.getBoolean("ytOpus", true),
             eqPerDevice = prefs.getBoolean("eqPerDevice", true),
+            levelOn = prefs.getBoolean("levelOn", true),
             autoPlayBt = prefs.getBoolean("autoPlayBt", false),
             outputName = prefs.getString("outputName", "").orEmpty(),
             versionName = info?.versionName ?: "",
@@ -886,6 +888,12 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     fun setBigControls(on: Boolean) {
         _options.value = _options.value.copy(bigControls = on)
         prefs.edit().putBoolean("bigControls", on).apply()
+    }
+
+    fun setLevelOn(on: Boolean) {
+        prefs.edit().putBoolean("levelOn", on).apply()
+        app.klang.playback.AudioEngine.levelOn = on
+        _options.value = _options.value.copy(levelOn = on)
     }
 
     fun setEqPerDevice(on: Boolean) {

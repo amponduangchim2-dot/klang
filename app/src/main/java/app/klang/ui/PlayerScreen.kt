@@ -257,7 +257,7 @@ fun PlayerScreen(ui: PlayerUi, sleepChoice: Int, sleepLeftMs: Long, libraryCount
             val tools = listOf(
                 ToolSpec("library", Glyph.Library, "$libraryCount songs") { a.open(Screen.Hub) },
                 ToolSpec("search", Glyph.Search, "youtube") { a.open(Screen.Search) },
-                ToolSpec("lyrics", Glyph.Lyrics, "lrclib") { a.open(Screen.Lyrics) },
+                ToolSpec("web", Glyph.Web, "ads blocked") { a.open(Screen.Web) },
                 ToolSpec("skins", Glyph.Skins, Skins.byId(K.skin.id).label) { a.open(Screen.Skins) },
                 ToolSpec("sleep", Glyph.Sleep, sleepLabel, active = sleepChoice != 0) { a.cycleSleep() },
                 ToolSpec("output", Glyph.Cast, "speaker · bt") { a.notYet("Cast") },

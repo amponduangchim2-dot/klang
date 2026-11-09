@@ -75,7 +75,10 @@ object Dlna {
 
     private fun esc(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
 
-    private fun soap(r: Renderer, action: String, args: String): Boolean = runCatching {
+    private fun soap(r: Renderer, action: String, args: String): Boolean = call(r, action, args) != null
+
+    /** Sends one AVTransport action; the TV's answer, or null when it refused. */
+    private fun call(r: Renderer, action: String, args: String): String? = runCatching {
         val body = """<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:$action xmlns:u="$AVT"><InstanceID>0</InstanceID>$args</u:$action></s:Body></s:Envelope>"""
         val c = URL(r.controlUrl).openConnection() as HttpURLConnection
@@ -84,8 +87,8 @@ object Dlna {
         c.setRequestProperty("Content-Type", "text/xml; charset=\"utf-8\"")
         c.setRequestProperty("SOAPACTION", "\"$AVT#$action\"")
         c.outputStream.use { it.write(body.toByteArray()) }
-        try { c.responseCode in 200..299 } finally { c.disconnect() }
-    }.getOrDefault(false)
+        try { if (c.responseCode in 200..299) c.inputStream.use { it.readBytes() }.toString(Charsets.UTF_8) else null } finally { c.disconnect() }
+    }.getOrNull()
 
     /** Sends [url] to the TV and starts it. Call off the main thread. */
     fun play(r: Renderer, url: String, title: String, mime: String): Boolean {
@@ -98,4 +101,29 @@ object Dlna {
     fun pause(r: Renderer) = soap(r, "Pause", "")
     fun resume(r: Renderer) = soap(r, "Play", "<Speed>1</Speed>")
     fun stop(r: Renderer) = soap(r, "Stop", "")
+
+    /** Jumps to [ms] in the film. */
+    fun seek(r: Renderer, ms: Long) = soap(r, "Seek", "<Unit>REL_TIME</Unit><Target>${clock(ms)}</Target>")
+
+    /** Where the TV is in the film and how long it is, in ms. Null when the TV doesn't say. */
+    fun position(r: Renderer): Pair<Long, Long>? {
+        val x = call(r, "GetPositionInfo", "") ?: return null
+        fun tag(n: String) = Regex("<(?:\\w+:)?$n>([^<]*)</").find(x)?.groupValues?.get(1)
+        val at = parseClock(tag("RelTime")) ?: return null
+        return at to (parseClock(tag("TrackDuration")) ?: 0L)
+    }
+
+    private fun clock(ms: Long): String {
+        val t = (ms / 1000).coerceAtLeast(0)
+        return "%d:%02d:%02d".format(t / 3600, (t / 60) % 60, t % 60)
+    }
+
+    private fun parseClock(s: String?): Long? {
+        val p = s?.trim()?.substringBefore('.')?.split(':') ?: return null
+        if (p.size != 3) return null
+        val h = p[0].toLongOrNull() ?: return null
+        val m = p[1].toLongOrNull() ?: return null
+        val sec = p[2].toLongOrNull() ?: return null
+        return ((h * 60 + m) * 60 + sec) * 1000
+    }
 }

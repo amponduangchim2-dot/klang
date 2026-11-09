@@ -83,6 +83,7 @@ import app.klang.youtube.YouTube
 import app.klang.youtube.YtItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class VideoActions(
@@ -130,6 +131,29 @@ fun VideoScreen(item: YtItem, fullscreen: Boolean, setFullscreen: (Boolean) -> U
     }
 
     val prefs = remember { context.getSharedPreferences("klang", android.content.Context.MODE_PRIVATE) }
+
+    // ---- the TV: the clip goes there, the phone becomes its remote
+    val caster = remember { app.klang.cast.Caster.get(context) }
+    val castScope = androidx.compose.runtime.rememberCoroutineScope()
+    var castPick by remember { mutableStateOf(false) }
+    var castNote by remember { mutableStateOf<String?>(null) }
+    val onTv = caster.current != null
+    var wasOnTv by remember { mutableStateOf(false) }
+    LaunchedEffect(onTv) {
+        if (onTv) player.pause()
+        else if (wasOnTv && caster.positionMs > 0) player.seekTo(caster.positionMs)   // carry on from where the TV was
+        wasOnTv = onTv
+    }
+    val castTo: (app.klang.cast.Tv) -> Unit = { tv ->
+        castPick = false
+        castNote = "getting the clip ready for the tv…"
+        val at = player.currentPosition.coerceAtLeast(0L)
+        castScope.launch {
+            val m = withContext(Dispatchers.IO) { runCatching { app.klang.cast.YouTubeCast.media(item.url, at) }.getOrNull() }
+            if (m == null) castNote = "This clip can't be sent to a TV. Try mirroring the screen."
+            else { castNote = null; player.pause(); caster.castTo(tv, m) }
+        }
+    }
     var enhance by remember { mutableStateOf(prefs.getBoolean("videoSharpenOn", false)) }
     var sharpen by remember { mutableFloatStateOf(prefs.getFloat("videoSharpen", 0.5f)) }
     val sharpenNow = remember { floatArrayOf(prefs.getFloat("videoSharpen", 0.5f)) }   // read by the shader every frame
@@ -406,6 +430,7 @@ fun VideoScreen(item: YtItem, fullscreen: Boolean, setFullscreen: (Boolean) -> U
         return
     }
 
+    Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         ScreenHeader("video", "youtube", a.back)
         Panel(Modifier.fillMaxWidth().weight(1f)) {
@@ -442,15 +467,28 @@ fun VideoScreen(item: YtItem, fullscreen: Boolean, setFullscreen: (Boolean) -> U
                 }
             }
 
+            castNote?.let { note ->
+                Tile(Modifier.fillMaxWidth(), padding = 6.dp) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        TvGlyph(K.orange)
+                        Text(note, style = K.label.copy(fontSize = 12.sp), maxLines = 2, modifier = Modifier.weight(1f))
+                        TextKey("✕", { castNote = null }, Modifier.size(36.dp))
+                    }
+                }
+            }
+
+            // ---- on the TV: the remote takes the place of the phone's own keys
+            if (onTv) CastRemote(caster, live = live)
+
             // ---- position
-            if (!live) {
+            if (!live && !onTv) {
                 Tile(Modifier.fillMaxWidth(), padding = 4.dp) {
                     TuningScale(if (durMs > 0) posMs.toFloat() / durMs else 0f, durMs, 0, 0, seekFrac)
                 }
             }
 
             // ---- keys
-            PanelRow(height = 78.dp) {
+            if (!onTv) PanelRow(height = 78.dp) {
                 Tile(Modifier.weight(1f).fillMaxHeight(), padding = 0.dp) {
                     OpKey({ player.seekBack() }, Modifier.fillMaxSize(), "Back 10 seconds") { KeyText("−10", live) }
                 }
@@ -462,6 +500,9 @@ fun VideoScreen(item: YtItem, fullscreen: Boolean, setFullscreen: (Boolean) -> U
                 }
                 Tile(Modifier.weight(1f).fillMaxHeight(), padding = 0.dp) {
                     OpKey({ setFullscreen(true) }, Modifier.fillMaxSize(), "Full screen") { FullGlyph(K.ink) }
+                }
+                Tile(Modifier.weight(1f).fillMaxHeight(), padding = 0.dp) {
+                    OpKey({ castPick = true }, Modifier.fillMaxSize(), "Cast to TV") { TvGlyph(K.ink) }
                 }
             }
 
@@ -514,6 +555,11 @@ fun VideoScreen(item: YtItem, fullscreen: Boolean, setFullscreen: (Boolean) -> U
                 }
             }
         }
+    }
+    if (castPick) CastPicker(
+        c = caster, hasMedia = true, what = "youtube · " + title,
+        onPick = castTo, onClose = { castPick = false },
+    )
     }
 }
 

@@ -397,6 +397,50 @@ object YouTube {
         }
     }
 
+    /** One stream of a clip with the byte ranges a DASH player needs to find its pieces. */
+    data class DashRep(
+        val url: String, val mime: String, val codecs: String, val bitrate: Int,
+        val width: Int, val height: Int, val fps: Int,
+        val initStart: Int, val initEnd: Int, val indexStart: Int, val indexEnd: Int,
+    )
+
+    /** What a TV needs to play a clip: DASH picture + sound, the live playlist, or the single 360p file. */
+    data class CastStreams(
+        val title: String, val live: Boolean, val durationSec: Long,
+        val hlsUrl: String?, val video: DashRep?, val audio: DashRep?, val muxedUrl: String?,
+    )
+
+    /** Streams for casting [url], picture no taller than [maxHeight] (0 = up to 4K). Call off the main thread. */
+    fun castStreams(url: String, maxHeight: Int = 1080): CastStreams {
+        val id = videoId(url) ?: throw TrackUnavailable("Not a YouTube video link")
+        init()
+        return guard {
+            val info = StreamInfo.getInfo(service, watchUrl(id))
+            val live = info.streamType == org.schabi.newpipe.extractor.stream.StreamType.LIVE_STREAM ||
+                info.streamType == org.schabi.newpipe.extractor.stream.StreamType.AUDIO_LIVE_STREAM
+            val cap = if (maxHeight <= 0) 2160 else maxHeight
+            fun rank(codec: String?): Int = when {
+                codec == null -> 9
+                codec.startsWith("avc") -> 0
+                codec.startsWith("vp9") || codec.startsWith("vp09") -> 1
+                else -> 9   // av1: few TVs decode it
+            }
+            val video = info.videoOnlyStreams
+                .filter { it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.isUrl && it.height in 1..cap && it.indexEnd > 0 && it.initEnd > 0 && rank(it.codec) < 9 }
+                .sortedWith(compareByDescending<org.schabi.newpipe.extractor.stream.VideoStream> { it.height }.thenBy { rank(it.codec) }.thenByDescending { it.bitrate })
+                .firstOrNull()
+                ?.let { DashRep(it.content, it.format?.mimeType ?: "video/mp4", it.codec.orEmpty(), it.bitrate, it.width, it.height, it.fps, it.initStart, it.initEnd, it.indexStart, it.indexEnd) }
+            val audio = info.audioStreams
+                .filter { it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.isUrl && it.indexEnd > 0 && it.initEnd > 0 }
+                .let { list -> list.filter { it.format == MediaFormat.M4A }.maxByOrNull { it.averageBitrate } ?: list.maxByOrNull { it.averageBitrate } }
+                ?.let { DashRep(it.content, it.format?.mimeType ?: "audio/mp4", it.codec.orEmpty(), it.bitrate, 0, 0, 0, it.initStart, it.initEnd, it.indexStart, it.indexEnd) }
+            val muxed = info.videoStreams
+                .filter { it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.isUrl }
+                .maxByOrNull { it.height }
+            CastStreams(info.name, live, info.duration, info.hlsUrl?.takeIf { it.isNotBlank() }, video, audio, muxed?.content)
+        }
+    }
+
     /** User agent that matches the YouTube client the stream URL was made for. */
     fun userAgentFor(streamUrl: String): String {
         val client = Uri.parse(streamUrl).getQueryParameter("c").orEmpty().uppercase()

@@ -182,6 +182,7 @@ class OptionsActions(
     val setSkipTalk: (Boolean) -> Unit,
     val setYtOpus: (Boolean) -> Unit,
     val setEqPerDevice: (Boolean) -> Unit,
+    val setLevelOn: (Boolean) -> Unit,
     val setAutoPlayBt: (Boolean) -> Unit,
     val backup: () -> Unit,
     val restore: () -> Unit,
@@ -226,6 +227,12 @@ fun OptionsScreen(o: OptionsUi, skipTalk: Boolean, a: OptionsActions) {
         Tile(Modifier.fillMaxWidth()) {
             Text("car & headphones", style = K.label)
             Spacer(Modifier.height(8.dp))
+            SwitchRow(
+                "even out loudness",
+                "Songs from YouTube and from the phone play at about the same loudness, so you don't reach for the volume between them.",
+                o.levelOn
+            ) { a.setLevelOn(!o.levelOn) }
+            Spacer(Modifier.height(10.dp))
             SwitchRow(
                 "an EQ for each output",
                 "The car, each pair of headphones and the speaker keep their own EQ." +

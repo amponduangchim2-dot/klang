@@ -102,7 +102,7 @@ fun LibraryHub(
         // web browser with ad blocking
         Tile(Modifier.fillMaxWidth(), onClick = a.openWeb) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlineIcon(Glyph.Search, size = 30.dp)
+                OutlineIcon(Glyph.Web, size = 30.dp)
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text("web", style = K.name)

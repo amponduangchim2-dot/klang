@@ -35,14 +35,34 @@ data class Tv(val id: String, val name: String, val kind: Kind, internal val rou
     enum class Kind { GOOGLE_CAST, DLNA }
 }
 
-/** What is being cast: a video address with the headers the site wants. */
-data class CastMedia(val url: String, val title: String, val mime: String, val headers: StreamProxy.Headers)
+/**
+ * What is being cast: a video address with the headers the site wants.
+ * With [manifest], the phone writes the playlist itself (YouTube as DASH) from the relayed [sources];
+ * [fallback] is tried when the TV can't play this one.
+ */
+data class CastMedia(
+    val url: String,
+    val title: String,
+    val mime: String,
+    val headers: StreamProxy.Headers,
+    val sources: List<String> = emptyList(),
+    val manifest: ((List<String>) -> String)? = null,
+    val fallback: CastMedia? = null,
+    val startMs: Long = 0L,
+)
 
 /**
  * Finds TVs (Google Cast and DLNA) and sends a video to one of them through [StreamProxy].
  * State is Compose state, read by the web screen.
  */
-class Caster(context: Context) {
+class Caster private constructor(context: Context) {
+    companion object {
+        @Volatile private var one: Caster? = null
+        /** One for the whole app: the web screen and the video screen share the TV. */
+        fun get(context: Context): Caster = one ?: synchronized(this) { one ?: Caster(context).also { one = it } }
+        fun peek(): Caster? = one
+    }
+
     private val app = context.applicationContext
     private val main = Handler(Looper.getMainLooper())
     private val io = Executors.newSingleThreadExecutor()
@@ -68,6 +88,61 @@ class Caster(context: Context) {
     var tvQuality by mutableStateOf(720)
         private set
     private var lastUrl: String? = null
+
+    /** Where the TV is in the film, for the remote on the phone. */
+    var positionMs by mutableStateOf(0L)
+        private set
+    var durationMs by mutableStateOf(0L)
+        private set
+    /** What is on the TV now. */
+    var title by mutableStateOf("")
+        private set
+    /** Seek asked for but not yet seen in the TV's answer: holds the slider still meanwhile. */
+    private var seekHold = 0L
+
+    private val poll = object : Runnable {
+        override fun run() {
+            val tv = current ?: return
+            when (tv.kind) {
+                Tv.Kind.GOOGLE_CAST -> cast?.sessionManager?.currentCastSession?.remoteMediaClient?.let { c ->
+                    if (System.currentTimeMillis() > seekHold) positionMs = c.approximateStreamPosition.coerceAtLeast(0L)
+                    c.streamDuration.takeIf { it > 0 }?.let { durationMs = it }
+                }
+                Tv.Kind.DLNA -> io.execute {
+                    val p = Dlna.position(tv.dlna!!)
+                    main.post {
+                        if (p != null && current == tv) {
+                            if (System.currentTimeMillis() > seekHold) positionMs = p.first
+                            if (p.second > 0) durationMs = p.second
+                        }
+                    }
+                }
+            }
+            main.postDelayed(this, 1000)
+        }
+    }
+
+    private fun startPolling() {
+        main.removeCallbacks(poll)
+        main.postDelayed(poll, 800)
+    }
+
+    /** Jumps the TV to [ms]. */
+    fun seekTo(ms: Long) {
+        val tv = current ?: return
+        val dur = durationMs
+        val to = if (dur > 0) ms.coerceIn(0L, (dur - 1000).coerceAtLeast(0L)) else ms.coerceAtLeast(0L)
+        positionMs = to
+        seekHold = System.currentTimeMillis() + 2500
+        when (tv.kind) {
+            Tv.Kind.GOOGLE_CAST -> cast?.sessionManager?.currentCastSession?.remoteMediaClient
+                ?.seek(com.google.android.gms.cast.MediaSeekOptions.Builder().setPosition(to).build())
+            Tv.Kind.DLNA -> io.execute { Dlna.seek(tv.dlna!!, to) }
+        }
+    }
+
+    /** Back or ahead by [deltaMs] (−10 s / +10 s keys). */
+    fun skip(deltaMs: Long) = seekTo(positionMs + deltaMs)
 
     private var dlnaFound: List<Tv> = emptyList()
     private var pending: CastMedia? = null
@@ -120,17 +195,23 @@ class Caster(context: Context) {
     fun castTo(tv: Tv, media: CastMedia) {
         message = null
         current = tv
+        title = media.title
+        positionMs = media.startMs; durationMs = 0L
         pending = media
         holdWifi(true)
+        startPolling()
         when (tv.kind) {
             Tv.Kind.GOOGLE_CAST -> {
                 val s = cast?.sessionManager?.currentCastSession
                 if (s != null && s.isConnected) loadOnCast(s, media) else tv.route?.let { router.selectRoute(it) }
             }
             Tv.Kind.DLNA -> io.execute {
+                // DLNA TVs don't read manifests made on the phone: send the single-file version
+                val media = if (media.manifest != null) media.fallback ?: media else media
                 val url = runCatching { proxy.publish(media.url, media.headers) }.getOrNull()
                 val code = if (url != null) relayWorks(url) else -1
                 val ok = url != null && code in 200..299 && Dlna.play(tv.dlna!!, url, media.title, dlnaMime(media.mime))
+                if (ok && media.startMs >= 5000) { Thread.sleep(1500); Dlna.seek(tv.dlna!!, media.startMs) }
                 main.post {
                     playing = ok
                     if (!ok) {
@@ -173,6 +254,8 @@ class Caster(context: Context) {
 
     // ---- what the TV reports, and a second try with the site's own address
     private var lastMedia: CastMedia? = null
+        set(v) { field = v; quality = v != null && v.manifest == null && v.mime.contains("mpegurl", true) }
+    private var quality by mutableStateOf(true)
     private var lastFmp4 = false
     private var triedDirect = false
     /** 0 = through the phone, 1 = through the phone in simple mode, 2 = the site's own address. */
@@ -202,7 +285,12 @@ class Caster(context: Context) {
                 val m = lastMedia
                 val s = cast?.sessionManager?.currentCastSession
                 val at = st.streamPosition.coerceAtLeast(0L)
-                if (stage == 0 && m != null && s != null && lastUrl != null) {
+                val fb = m?.fallback
+                if (fb != null && s != null) {
+                    message = "trying a simpler version of the video…"
+                    lastMedia = fb
+                    loadOnCast(s, fb.copy(startMs = at))
+                } else if (stage == 0 && m != null && s != null && lastUrl != null) {
                     // second try through the phone, the plain way: every quality the site has, no fetching ahead
                     stage = 1
                     proxy.compat = true
@@ -222,6 +310,9 @@ class Caster(context: Context) {
     }
 
     /** 480 → 720 → 1080 → all: lower is smoother on TVs that stall. Reloads at the same moment. */
+    /** The TV quality key only applies to streams the relay thins out (HLS on Google Cast). */
+    val canChangeQuality: Boolean get() = current?.kind == Tv.Kind.GOOGLE_CAST && lastMedia?.manifest == null && quality
+
     fun cycleQuality() {
         tvQuality = when (tvQuality) { 480 -> 720; 720 -> 1080; 1080 -> 0; else -> 480 }
         proxy.maxHeight = tvQuality
@@ -242,6 +333,7 @@ class Caster(context: Context) {
             .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
             .setContentType(if (hls) "application/x-mpegurl" else media.mime)
             .setMetadata(meta)
+        if (media.manifest != null) b.setContentType("application/dash+xml")
         if (hls) {
             b.setHlsSegmentFormat(if (fmp4) com.google.android.gms.cast.HlsSegmentFormat.FMP4 else com.google.android.gms.cast.HlsSegmentFormat.TS)
             b.setHlsVideoSegmentFormat(if (fmp4) com.google.android.gms.cast.HlsVideoSegmentFormat.FMP4 else com.google.android.gms.cast.HlsVideoSegmentFormat.MPEG2_TS)
@@ -264,10 +356,15 @@ class Caster(context: Context) {
         io.execute {
             proxy.maxHeight = tvQuality
             proxy.compat = false
-            val url = runCatching { proxy.publish(media.url, media.headers) }.getOrNull()
+            val make = media.manifest
+            val url = runCatching {
+                if (make != null) proxy.publishDoc(media.sources, media.headers, ".mpd", "application/dash+xml", make)
+                else proxy.publish(media.url, media.headers)
+            }.getOrNull()
             if (url == null) { main.post { message = "Connect the phone to the same Wi-Fi as the TV."; stop() }; return@execute }
-            val code = relayWorks(url)
+            val code = relayWorks(if (make != null) proxy.publishedSource(0) ?: url else url)
             if (code !in 200..299) {
+                if (media.fallback != null) { main.post { loadOnCast(s, media.fallback.copy(startMs = media.startMs)) }; return@execute }
                 main.post {
                     message = if (code < 0) "The phone couldn't reach the video. Check the Wi-Fi and try again."
                     else "The site refused to hand the video over (error $code). Start the film on the page again, then cast."
@@ -279,7 +376,7 @@ class Caster(context: Context) {
             val fmp4 = hls && hlsIsFmp4(media)
             main.post {
                 lastMedia = media; lastFmp4 = fmp4; triedDirect = false; lastTvError = null; stage = 0
-                sendToTv(s, url, media, fmp4)
+                sendToTv(s, url, media, fmp4, media.startMs)
             }
         }
     }
@@ -304,6 +401,7 @@ class Caster(context: Context) {
     fun dismissMessage() { message = null }
 
     private fun finish() {
+        main.removeCallbacks(poll)
         current = null
         playing = false
         pending = null

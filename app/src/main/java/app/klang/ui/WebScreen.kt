@@ -98,6 +98,8 @@ fun WebScreen(w: WebHolder, onFullscreen: (Boolean) -> Unit, onBack: () -> Unit,
         onDispose { lifecycle.removeObserver(obs) }
     }
 
+    // floating window: the film alone, not the page around it
+    LaunchedEffect(pip) { if (full == null) w.focusFilm(pip) }
     if (pip) {
         Box(Modifier.fillMaxSize().background(Color.Black)) {
             if (full != null) AndroidView(factory = { full.also { v -> (v.parent as? ViewGroup)?.removeView(v) } }, modifier = Modifier.fillMaxSize())
@@ -134,6 +136,7 @@ fun WebScreen(w: WebHolder, onFullscreen: (Boolean) -> Unit, onBack: () -> Unit,
     BackHandler {
         when {
             w.fullView != null -> w.exitFullscreen()
+            w.picking -> w.cancelPicking()
             w.canBack -> w.back()
             w.url.isNotEmpty() -> w.home()
             else -> onBack()
@@ -142,6 +145,7 @@ fun WebScreen(w: WebHolder, onFullscreen: (Boolean) -> Unit, onBack: () -> Unit,
 
     var picking by remember { mutableStateOf(false) }
     val caster = if (picking || w.media.isNotEmpty() || w.hasCaster) w.useCaster() else null
+    var more by remember { mutableStateOf(false) }
     var field by remember { mutableStateOf(w.url) }
     var editing by remember { mutableStateOf(false) }
     LaunchedEffect(w.url) { if (!editing) field = w.url }
@@ -196,26 +200,38 @@ fun WebScreen(w: WebHolder, onFullscreen: (Boolean) -> Unit, onBack: () -> Unit,
                 }
             }
 
+            // ---- the TV remote while a film is cast
+            caster?.let { c -> if (c.current != null) CastRemote(c) }
+
             // ---- status strip: casting, blocked count, stopped pop-up, per-site switch
-            Tile(Modifier.fillMaxWidth(), padding = 6.dp) {
+            if (caster?.current == null) Tile(Modifier.fillMaxWidth(), padding = 6.dp) {
                 val stopped = w.stopped
                 val tv = caster?.current
                 val castMsg = caster?.message
                 if (tv != null) {
+                    // the film is on the TV: the remote sits below the page (see CastRemote)
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        TvGlyph(K.orange)
-                        Text(castMsg ?: ("on " + tv.name), style = if (castMsg != null) K.label.copy(fontSize = 12.sp) else K.name.copy(fontSize = 13.sp), maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                        if (tv.kind == app.klang.cast.Tv.Kind.GOOGLE_CAST) TextKey(
-                            caster!!.tvQuality.let { q -> if (q == 0) "tv: max" else "tv: ${q}p" },
-                            { caster.cycleQuality() }, Modifier.height(36.dp).width(72.dp)
-                        )
-                        TextKey(if (caster!!.playing) "pause" else "play", { caster.togglePlay() }, Modifier.height(36.dp).width(64.dp))
-                        TextKey("stop", { caster.stop() }, Modifier.height(36.dp).width(60.dp), orange = true)
+                        StatusDot(w.blockingHere)
+                        Text("${w.blockedCount} ads blocked · film on the tv", style = K.name.copy(fontSize = 13.sp), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                     }
                 } else if (castMsg != null) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(castMsg, style = K.label.copy(fontSize = 12.sp), maxLines = 2, modifier = Modifier.weight(1f))
                         TextKey("✕", { caster!!.dismissMessage() }, Modifier.size(36.dp))
+                    }
+                } else if (w.picking) {
+                    // ---- hide a banner by hand
+                    val p = w.picked
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            if (p == null) "tap the banner to hide" else "hide this? ${p.second}",
+                            style = K.name.copy(fontSize = 13.sp), maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
+                        )
+                        if (p != null) {
+                            TextKey("bigger", { w.pickBigger() }, Modifier.height(36.dp).width(64.dp))
+                            TextKey("hide", { w.hidePicked() }, Modifier.height(36.dp).width(56.dp), orange = true)
+                        }
+                        TextKey("✕", { w.cancelPicking() }, Modifier.size(36.dp))
                     }
                 } else if (stopped != null) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -235,11 +251,20 @@ fun WebScreen(w: WebHolder, onFullscreen: (Boolean) -> Unit, onBack: () -> Unit,
                             },
                             style = K.name.copy(fontSize = 13.sp), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
                         )
-                        if (w.url.isNotEmpty() && w.adblockOn) TextKey(if (w.blockingHere) "allow here" else "block here", { w.toggleSite() }, Modifier.height(36.dp).width(78.dp))
+                        if (w.url.isNotEmpty() && w.adblockOn) TextKey("hide ad", { more = false; w.startPicking() }, Modifier.height(36.dp).width(72.dp))
                         if (w.url.isNotEmpty()) androidx.compose.foundation.layout.Box(Modifier.size(36.dp)) {
                             app.klang.ui.components.Key({ w.rescan(); picking = true }, Modifier.fillMaxSize(), orange = w.media.isNotEmpty(), description = "Cast to TV") { TvGlyph(it) }
                         }
-                        TextKey(if (w.adblockOn) "blocker: on" else "blocker: off", { w.toggleAdblock() }, Modifier.height(36.dp).width(84.dp), active = w.adblockOn)
+                        TextKey("⋯", { more = !more }, Modifier.size(36.dp), active = more)
+                    }
+                }
+            }
+            if (more) {
+                Tile(Modifier.fillMaxWidth(), padding = 6.dp) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        TextKey(if (w.adblockOn) "blocker: on" else "blocker: off", { w.toggleAdblock() }, Modifier.weight(1f).height(38.dp), active = w.adblockOn)
+                        if (w.url.isNotEmpty() && w.adblockOn) TextKey(if (w.blockingHere) "allow ads here" else "block ads here", { w.toggleSite() }, Modifier.weight(1f).height(38.dp))
+                        if (w.url.isNotEmpty() && w.hiddenHere > 0) TextKey("show hidden (${w.hiddenHere})", { more = false; w.unhideAllHere() }, Modifier.weight(1f).height(38.dp))
                     }
                 }
             }
@@ -267,7 +292,7 @@ fun WebScreen(w: WebHolder, onFullscreen: (Boolean) -> Unit, onBack: () -> Unit,
             c = c,
             hasMedia = w.media.isNotEmpty(),
             what = w.media.firstOrNull()?.let { m -> (if (m.mime.contains("mpegurl", true)) "stream (hls)" else m.mime.substringAfter('/')) + " · " + (android.net.Uri.parse(m.url).host ?: "") },
-            onPick = { tv -> w.castMedia()?.let { c.castTo(tv, it) }; picking = false },
+            onPick = { tv -> w.castMedia()?.let { c.castTo(tv, it); w.pauseMedia() }; picking = false },
             onClose = { picking = false },
         )
     }
@@ -389,84 +414,6 @@ private fun HomeGlyph() {
             moveTo(6.5f * u, 9.5f * u); lineTo(6.5f * u, 20 * u); lineTo(17.5f * u, 20 * u); lineTo(17.5f * u, 9.5f * u)
         }
         drawPath(p, c, style = Stroke(2.3f * u, cap = StrokeCap.Round, join = StrokeJoin.Round))
-    }
-}
-
-
-/** OP-1 style list of TVs on the Wi-Fi. */
-@Composable
-private fun CastPicker(c: app.klang.cast.Caster, hasMedia: Boolean, what: String?, onPick: (app.klang.cast.Tv) -> Unit, onClose: () -> Unit) {
-    val ctx = LocalContext.current
-    DisposableEffect(Unit) {
-        c.startScan()
-        onDispose { c.stopScan() }
-    }
-    BackHandler { onClose() }
-    Box(
-        Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f)).clickable(onClick = onClose),
-        contentAlignment = Alignment.BottomCenter
-    ) {
-        Panel(Modifier.fillMaxWidth().padding(bottom = 4.dp).clickable(enabled = false) {}) {
-            Tile(Modifier.fillMaxWidth(), padding = 12.dp) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TvGlyph(K.ink)
-                    Spacer(Modifier.width(10.dp))
-                    Text("cast to tv", style = K.name, modifier = Modifier.weight(1f))
-                    if (c.scanning) Text("looking…", style = K.label)
-                }
-                Spacer(Modifier.height(8.dp))
-                if (!hasMedia) {
-                    Text("No video found on this page yet. Start the film on the page, then tap cast again. Or mirror the whole screen.", style = K.body.copy(color = K.ink2, fontSize = 13.sp))
-                    Spacer(Modifier.height(8.dp))
-                } else if (what != null) {
-                    Text("video found: $what", style = K.label.copy(fontSize = 12.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Spacer(Modifier.height(8.dp))
-                }
-                LcdBox(Modifier.fillMaxWidth().height(220.dp), padding = 6.dp) {
-                    if (c.tvs.isEmpty()) {
-                        Text(
-                            if (c.scanning) "looking for TVs on this Wi-Fi…" else "No TV found. The phone and the TV need the same Wi-Fi, and the TV must be on.",
-                            style = K.lcdSmall.copy(fontSize = 12.sp), modifier = Modifier.padding(8.dp)
-                        )
-                    }
-                    LazyColumn {
-                        items(c.tvs, key = { it.id }) { tv ->
-                            Row(
-                                Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp))
-                                    .clickable(enabled = hasMedia) { onPick(tv) }.padding(horizontal = 8.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                TvGlyph(Color.White)
-                                Spacer(Modifier.width(10.dp))
-                                Column(Modifier.weight(1f)) {
-                                    Text(tv.name, style = K.lcdText.copy(color = Color.White), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text(if (tv.kind == app.klang.cast.Tv.Kind.GOOGLE_CAST) "google cast" else "dlna", style = K.lcdSmall)
-                                }
-                                if (hasMedia) Text("cast ›", style = K.lcdSmall.copy(color = K.orange))
-                            }
-                        }
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    // Android's own screen mirroring: works with every site, at the phone's picture quality
-                    TextKey("mirror the screen", {
-                        val ok = runCatching { ctx.startActivity(android.content.Intent("android.settings.CAST_SETTINGS").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }.isSuccess
-                        if (!ok) runCatching { ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
-                    }, Modifier.weight(1f).height(42.dp))
-                    TextKey("close", onClose, Modifier.weight(1f).height(42.dp))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun TvGlyph(color: Color) {
-    Canvas(Modifier.size(18.dp)) {
-        val u = size.minDimension / 24f
-        drawRoundRect(color, Offset(2.5f * u, 4 * u), Size(19 * u, 13 * u), androidx.compose.ui.geometry.CornerRadius(2 * u), style = Stroke(2.2f * u))
-        drawLine(color, Offset(8 * u, 20.5f * u), Offset(16 * u, 20.5f * u), 2.2f * u, StrokeCap.Round)
     }
 }
 

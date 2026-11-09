@@ -26,6 +26,10 @@ object AudioEngine {
 
     /** -1 = left only, 0 = centre, +1 = right only. */
     @Volatile var balance: Float = 0f
+    /** Even out loudness between songs (see KlangAudioProcessor). */
+    @Volatile var levelOn: Boolean = true
+    /** Target short-term level, dBFS RMS after a gentle high-pass (about -14 LUFS for typical music). */
+    const val LEVEL_TARGET_DB = -16.0
 
     /** Bumped whenever EQ parameters change so the audio thread recomputes filters. */
     @Volatile var version: Int = 0
@@ -52,6 +56,7 @@ object AudioEngine {
         balance = p.getFloat("balance", 0f)
         userVolume = p.getFloat("volume", 0.7f)
         eqEnabled = p.getBoolean("eqOn", true)
+        levelOn = p.getBoolean("levelOn", true)
         preampDb = p.getFloat("preamp", 0f)
         setAllGains(FloatArray(BAND_COUNT) { p.getFloat("eq$it", 0f) })
         fadeMs = p.getInt("fadeSec", 0) * 1000L

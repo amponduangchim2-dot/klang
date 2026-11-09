@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.dp
 
 enum class Glyph {
     Prev, Next, Play, Pause, Stop, Eject,
-    Library, Search, Lyrics, Skins, Sleep, Cast, Share, Options, Back, Shuffle, Equalizer, List
+    Library, Search, Web, Lyrics, Skins, Sleep, Cast, Share, Options, Back, Shuffle, Equalizer, List
 }
 
 /** Draws [glyph] on a 24x24 grid, scaled to the canvas. Filled glyphs for transport, line glyphs for tools. */
@@ -56,6 +56,7 @@ fun DrawScope.drawGlyph(glyph: Glyph, color: Color) {
         Glyph.Eject -> { tri(12f, 4.5f, 19.5f, 13f, 4.5f, 13f); rect(4.5f, 15.5f, 15f, 3f) }
         Glyph.Library -> { line(5f, 5f, 8.5f, 5f, 8.5f, 19f, 5f, 19f, 5f, 5f); line(10.5f, 5f, 14f, 5f, 14f, 19f, 10.5f, 19f, 10.5f, 5f); line(16f, 6f, 19.3f, 6.8f, 16.3f, 19.4f, 13f, 18.6f) }
         Glyph.Search -> { ring(10.5f, 10.5f, 5.5f); line(15f, 15f, 19.5f, 19.5f) }
+        Glyph.Web -> { ring(12f, 12f, 7f); line(5f, 12f, 19f, 12f); line(12f, 5f, 9.6f, 8.5f, 9.6f, 15.5f, 12f, 19f); line(12f, 5f, 14.4f, 8.5f, 14.4f, 15.5f, 12f, 19f) }
         Glyph.Lyrics -> { line(6f, 8f, 18f, 8f); line(6f, 12f, 15f, 12f); line(6f, 16f, 12f, 16f) }
         Glyph.Skins -> { line(5f, 7f, 19f, 7f, 19f, 17f, 5f, 17f, 5f, 7f); line(8f, 11f, 11f, 11f); line(8f, 13.5f, 11f, 13.5f); ring(15.5f, 12f, 1.6f) }
         Glyph.Sleep -> { line(17.5f, 14f, 15f, 15f, 12f, 15f, 9.5f, 13.5f, 8f, 11f, 8f, 8f, 9f, 6f, 10f, 6.5f); line(10f, 6.5f, 7f, 7.5f, 5.5f, 10f, 5.5f, 13.5f, 7f, 16.5f, 10f, 18.3f, 13.5f, 18.3f, 16f, 17f, 17.5f, 14f) }

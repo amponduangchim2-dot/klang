@@ -324,6 +324,9 @@ class MainActivity : ComponentActivity() {
             }
             // only the video screen and the web screen float; elsewhere leaving the app just leaves
             LaunchedEffect(screen) { if (screen != Screen.Video && screen != Screen.Web) pipWanted = false }
+            // the web screen goes back to wherever it was opened from (player or library)
+            var beforeWeb by remember { mutableStateOf(Screen.Player) }
+            LaunchedEffect(screen) { if (screen != Screen.Web) beforeWeb = screen }
             var hasPermission by remember {
                 mutableStateOf(ContextCompat.checkSelfPermission(this, audioPermission) == PackageManager.PERMISSION_GRANTED)
             }
@@ -500,7 +503,7 @@ class MainActivity : ComponentActivity() {
                         })
                     }
                     Screen.Search -> SearchScreen(searchUi, skipNonMusic, searchActions)
-                    Screen.Web -> WebScreen(web, { webFull = it }, { webFull = false; screen = Screen.Hub }, pip, { pipWanted = it })
+                    Screen.Web -> WebScreen(web, { webFull = it }, { webFull = false; screen = beforeWeb }, pip, { pipWanted = it })
                     Screen.Video -> {
                         val v = videoItem
                         if (v == null) LaunchedEffect(Unit) { screen = Screen.Search }
@@ -590,6 +593,7 @@ class MainActivity : ComponentActivity() {
                             setSkipTalk = vm::setSkipNonMusic,
                             setYtOpus = vm::setYtOpus,
                             setEqPerDevice = vm::setEqPerDevice,
+                            setLevelOn = vm::setLevelOn,
                             setAutoPlayBt = { on ->
                                 if (on && android.os.Build.VERSION.SDK_INT >= 31 &&
                                     ContextCompat.checkSelfPermission(this@MainActivity, android.Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
