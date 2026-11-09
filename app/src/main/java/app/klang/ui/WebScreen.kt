@@ -198,7 +198,7 @@ fun WebScreen(w: WebHolder, onFullscreen: (Boolean) -> Unit, onBack: () -> Unit,
                 if (tv != null) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         TvGlyph(K.orange)
-                        Text("on " + tv.name, style = K.name.copy(fontSize = 13.sp), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        Text(castMsg ?: ("on " + tv.name), style = if (castMsg != null) K.label.copy(fontSize = 12.sp) else K.name.copy(fontSize = 13.sp), maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                         TextKey(if (caster!!.playing) "pause" else "play", { caster.togglePlay() }, Modifier.height(36.dp).width(64.dp))
                         TextKey("stop casting", { caster.stop() }, Modifier.height(36.dp).width(104.dp), orange = true)
                     }
@@ -256,6 +256,7 @@ fun WebScreen(w: WebHolder, onFullscreen: (Boolean) -> Unit, onBack: () -> Unit,
         CastPicker(
             c = c,
             hasMedia = w.media.isNotEmpty(),
+            what = w.media.firstOrNull()?.let { m -> (if (m.mime.contains("mpegurl", true)) "stream (hls)" else m.mime.substringAfter('/')) + " · " + (android.net.Uri.parse(m.url).host ?: "") },
             onPick = { tv -> w.castMedia()?.let { c.castTo(tv, it) }; picking = false },
             onClose = { picking = false },
         )
@@ -378,7 +379,8 @@ private fun HomeGlyph() {
 
 /** OP-1 style list of TVs on the Wi-Fi. */
 @Composable
-private fun CastPicker(c: app.klang.cast.Caster, hasMedia: Boolean, onPick: (app.klang.cast.Tv) -> Unit, onClose: () -> Unit) {
+private fun CastPicker(c: app.klang.cast.Caster, hasMedia: Boolean, what: String?, onPick: (app.klang.cast.Tv) -> Unit, onClose: () -> Unit) {
+    val ctx = LocalContext.current
     DisposableEffect(Unit) {
         c.startScan()
         onDispose { c.stopScan() }
@@ -398,7 +400,10 @@ private fun CastPicker(c: app.klang.cast.Caster, hasMedia: Boolean, onPick: (app
                 }
                 Spacer(Modifier.height(8.dp))
                 if (!hasMedia) {
-                    Text("No video found on this page yet. Start the film on the page, then tap cast again.", style = K.body.copy(color = K.ink2, fontSize = 13.sp))
+                    Text("No video found on this page yet. Start the film on the page, then tap cast again. Or mirror the whole screen.", style = K.body.copy(color = K.ink2, fontSize = 13.sp))
+                    Spacer(Modifier.height(8.dp))
+                } else if (what != null) {
+                    Text("video found: $what", style = K.label.copy(fontSize = 12.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(8.dp))
                 }
                 LcdBox(Modifier.fillMaxWidth().height(220.dp), padding = 6.dp) {
@@ -427,7 +432,14 @@ private fun CastPicker(c: app.klang.cast.Caster, hasMedia: Boolean, onPick: (app
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                TextKey("close", onClose, Modifier.fillMaxWidth().height(42.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // Android's own screen mirroring: works with every site, at the phone's picture quality
+                    TextKey("mirror the screen", {
+                        val ok = runCatching { ctx.startActivity(android.content.Intent("android.settings.CAST_SETTINGS").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }.isSuccess
+                        if (!ok) runCatching { ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                    }, Modifier.weight(1f).height(42.dp))
+                    TextKey("close", onClose, Modifier.weight(1f).height(42.dp))
+                }
             }
         }
     }

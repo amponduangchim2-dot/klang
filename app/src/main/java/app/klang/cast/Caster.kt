@@ -125,10 +125,18 @@ class Caster(context: Context) {
             }
             Tv.Kind.DLNA -> io.execute {
                 val url = runCatching { proxy.publish(media.url, media.headers) }.getOrNull()
-                val ok = url != null && Dlna.play(tv.dlna!!, url, media.title, dlnaMime(media.mime))
+                val code = if (url != null) relayWorks(url) else -1
+                val ok = url != null && code in 200..299 && Dlna.play(tv.dlna!!, url, media.title, dlnaMime(media.mime))
                 main.post {
                     playing = ok
-                    if (!ok) { message = "The TV didn't accept this video"; finish() }
+                    if (!ok) {
+                        message = when {
+                            url == null -> "Connect the phone to the same Wi-Fi as the TV."
+                            code !in 200..299 -> "The site refused to hand the video over (error $code)."
+                            else -> "The TV didn't accept this video. Try Google Cast or mirroring the screen."
+                        }
+                        finish()
+                    }
                 }
             }
         }
@@ -139,21 +147,75 @@ class Caster(context: Context) {
         else -> m
     }
 
+    /** HLS on Google Cast: the TV must be told whether the pieces are MPEG-TS or fragmented MP4. */
+    private fun hlsIsFmp4(media: CastMedia): Boolean {
+        var (text, base) = proxy.fetchText(media.url, media.headers) ?: return false
+        if (text.contains("#EXT-X-STREAM-INF")) {
+            val variant = text.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() && !it.startsWith("#") } ?: return false
+            val u = runCatching { java.net.URI(base).resolve(variant).toString() }.getOrNull() ?: return false
+            val v = proxy.fetchText(u, media.headers) ?: return false
+            text = v.first
+        }
+        return text.contains("#EXT-X-MAP") || text.lineSequence().any { !it.startsWith("#") && (it.contains(".m4s") || it.substringBefore('?').endsWith(".mp4")) }
+    }
+
+    /** The relay answers and the site gives the video: checked on the phone before the TV tries. */
+    private fun relayWorks(url: String): Int = runCatching {
+        val c = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        c.connectTimeout = 8000; c.readTimeout = 15_000
+        c.setRequestProperty("Range", "bytes=0-1023")
+        try { c.responseCode.also { if (it in 200..299) c.inputStream.use { s -> s.read(ByteArray(1024)) } } } finally { c.disconnect() }
+    }.getOrDefault(-1)
+
+    private val statusCallback = object : com.google.android.gms.cast.framework.media.RemoteMediaClient.Callback() {
+        override fun onStatusUpdated() {
+            val st = cast?.sessionManager?.currentCastSession?.remoteMediaClient?.mediaStatus ?: return
+            playing = st.playerState == com.google.android.gms.cast.MediaStatus.PLAYER_STATE_PLAYING ||
+                st.playerState == com.google.android.gms.cast.MediaStatus.PLAYER_STATE_BUFFERING
+            if (st.playerState == com.google.android.gms.cast.MediaStatus.PLAYER_STATE_IDLE &&
+                st.idleReason == com.google.android.gms.cast.MediaStatus.IDLE_REASON_ERROR) {
+                message = "The TV could not play this stream. Try another server on the site, or mirror the screen."
+            }
+        }
+    }
+
     private fun loadOnCast(s: CastSession, media: CastMedia) {
         pending = null
+        message = "sending to the TV…"
         io.execute {
             val url = runCatching { proxy.publish(media.url, media.headers) }.getOrNull()
+            if (url == null) { main.post { message = "Connect the phone to the same Wi-Fi as the TV."; stop() }; return@execute }
+            val code = relayWorks(url)
+            if (code !in 200..299) {
+                main.post {
+                    message = if (code < 0) "The phone couldn't reach the video. Check the Wi-Fi and try again."
+                    else "The site refused to hand the video over (error $code). Start the film on the page again, then cast."
+                    stop()
+                }
+                return@execute
+            }
+            val hls = media.mime.contains("mpegurl", true)
+            val fmp4 = hls && hlsIsFmp4(media)
             main.post {
-                if (url == null) { message = "Connect the phone to the same Wi-Fi as the TV"; finish(); return@post }
                 val meta = MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE).apply { putString(MediaMetadata.KEY_TITLE, media.title) }
-                val info = MediaInfo.Builder(url)
+                val b = MediaInfo.Builder(url)
                     .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
-                    .setContentType(media.mime)
+                    .setContentType(if (hls) "application/x-mpegurl" else media.mime)
                     .setMetadata(meta)
-                    .build()
-                val client = s.remoteMediaClient ?: run { message = "The TV isn't ready"; return@post }
-                client.load(MediaLoadRequestData.Builder().setMediaInfo(info).setAutoplay(true).build())
-                    .setResultCallback { r -> main.post { playing = r.status.isSuccess; if (!r.status.isSuccess) message = "The TV couldn't play this video" } }
+                if (hls) {
+                    b.setHlsSegmentFormat(if (fmp4) com.google.android.gms.cast.HlsSegmentFormat.FMP4 else com.google.android.gms.cast.HlsSegmentFormat.TS)
+                    b.setHlsVideoSegmentFormat(if (fmp4) com.google.android.gms.cast.HlsVideoSegmentFormat.FMP4 else com.google.android.gms.cast.HlsVideoSegmentFormat.MPEG2_TS)
+                }
+                val client = s.remoteMediaClient ?: run { message = "The TV isn't ready. Try again."; return@post }
+                client.unregisterCallback(statusCallback)
+                client.registerCallback(statusCallback)
+                client.load(MediaLoadRequestData.Builder().setMediaInfo(b.build()).setAutoplay(true).build())
+                    .setResultCallback { r ->
+                        main.post {
+                            if (r.status.isSuccess) { playing = true; message = null }
+                            else message = "The TV couldn't play this video (code ${r.status.statusCode}). Try mirroring the screen."
+                        }
+                    }
             }
         }
     }

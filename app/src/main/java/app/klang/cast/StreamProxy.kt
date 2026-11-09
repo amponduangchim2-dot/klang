@@ -44,11 +44,12 @@ class StreamProxy(private val context: Context) {
     fun publish(url: String, h: Headers): String? {
         val ip = wifiAddress() ?: return null
         if (server == null || server!!.isClosed) {
-            val s = ServerSocket(0, 50, InetAddress.getByName(ip))
+            val s = ServerSocket(0, 50)
             server = s
             pool.execute { acceptLoop(s) }
         }
         token = randomToken()
+        ipNow = ip
         headers = h
         hosts.clear()
         URL(url).host?.let { hosts += it.lowercase() }
@@ -77,16 +78,33 @@ class StreamProxy(private val context: Context) {
         return listOf(".m3u8", ".mp4", ".mpd", ".webm", ".ts", ".m4s", ".key", ".vtt").firstOrNull { path.endsWith(it) } ?: ""
     }
 
+    @Volatile private var ipNow: String = ""
+
     private fun proxied(u: String): String {
         val s = server ?: return u
         URL(u).host?.let { hosts += it.lowercase() }
-        return "http://${s.inetAddress.hostAddress}:${s.localPort}/$token/${encode(u)}${extensionOf(u)}"
+        return "http://$ipNow:${s.localPort}/$token/${encode(u)}${extensionOf(u)}"
     }
 
-    private fun wifiAddress(): String? {
+    /** The phone's address on the Wi-Fi the TV is on (not mobile data, not a VPN). */
+    fun wifiAddress(): String? {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val lp: LinkProperties = cm.getLinkProperties(cm.activeNetwork) ?: return null
-        return lp.linkAddresses.map { it.address }.firstOrNull { it is Inet4Address && !it.isLoopbackAddress }?.hostAddress
+        @Suppress("DEPRECATION")
+        val nets = cm.allNetworks
+        for (n in nets) {
+            val caps = cm.getNetworkCapabilities(n) ?: continue
+            if (!caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) &&
+                !caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET)) continue
+            val lp: LinkProperties = cm.getLinkProperties(n) ?: continue
+            lp.linkAddresses.map { it.address }.firstOrNull { it is Inet4Address && !it.isLoopbackAddress }?.let { return it.hostAddress }
+        }
+        // phone as a hotspot, or an unusual setup: any private IPv4 on wlan/ap/eth
+        return runCatching {
+            java.net.NetworkInterface.getNetworkInterfaces().toList()
+                .filter { it.isUp && !it.isLoopback && (it.name.startsWith("wlan") || it.name.startsWith("ap") || it.name.startsWith("eth") || it.name.startsWith("swlan")) }
+                .flatMap { it.inetAddresses.toList() }
+                .firstOrNull { it is Inet4Address && it.isSiteLocalAddress }?.hostAddress
+        }.getOrNull()
     }
 
     private fun acceptLoop(s: ServerSocket) {
@@ -157,6 +175,20 @@ class StreamProxy(private val context: Context) {
                 out.flush()
                 return
             }
+            // only small HLS pieces are read whole (never a full film file)
+            val path = finalUrl.substringBefore('?').lowercase()
+            val pieceExt = listOf(".ts", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".html", ".htm", ".txt", ".js", ".css")
+            val len = conn.getHeaderField("Content-Length")?.toLongOrNull() ?: -1L
+            val segment = (pieceExt.any { path.endsWith(it) } || type.startsWith("image/") || type.contains("mp2t")) && len in -1L..(40L * 1024 * 1024)
+            if (segment && code == 200 && method != "HEAD" && reqHeaders["range"] == null) {
+                val bytes = conn.inputStream.use { it.readBytes() }
+                val start = tsStart(bytes)
+                val body = if (start > 0) bytes.copyOfRange(start, bytes.size) else bytes
+                val type2 = if (start > 0 || looksTs(body)) "video/mp2t" else type
+                status(out, 200, "OK", cors() + listOfNotNull(type2.takeIf { it.isNotEmpty() }?.let { "Content-Type: $it" }, "Content-Length: ${body.size}"))
+                out.write(body); out.flush()
+                return
+            }
             val h = mutableListOf<String>()
             h += cors()
             if (type.isNotEmpty()) h += "Content-Type: $type"
@@ -174,8 +206,10 @@ class StreamProxy(private val context: Context) {
 
     private fun cors() = listOf(
         "Access-Control-Allow-Origin: *",
+        "Access-Control-Allow-Methods: GET, HEAD, OPTIONS",
         "Access-Control-Allow-Headers: *",
-        "Access-Control-Expose-Headers: Content-Length, Content-Range",
+        "Access-Control-Allow-Private-Network: true",
+        "Access-Control-Expose-Headers: Content-Length, Content-Range, Accept-Ranges",
         "Connection: close",
     )
 
@@ -185,6 +219,31 @@ class StreamProxy(private val context: Context) {
         sb.append("\r\n")
         out.write(sb.toString().toByteArray())
     }
+
+    private fun looksTs(b: ByteArray) = b.size > 376 && b[0] == 0x47.toByte() && b[188] == 0x47.toByte() && b[376] == 0x47.toByte()
+
+    /** Where the real MPEG-TS starts when a segment wears a fake PNG/JPEG/GIF header; 0 when it does not. */
+    private fun tsStart(b: ByteArray): Int {
+        if (b.size < 400 || looksTs(b)) return 0
+        val fake = (b[0] == 0x89.toByte() && b[1] == 'P'.code.toByte()) || (b[0] == 0xFF.toByte() && b[1] == 0xD8.toByte()) ||
+            (b[0] == 'G'.code.toByte() && b[1] == 'I'.code.toByte()) || (b[0] == 'B'.code.toByte() && b[1] == 'M'.code.toByte())
+        if (!fake) return 0
+        val limit = minOf(b.size - 377, 64 * 1024)
+        for (i in 0 until limit) {
+            if (b[i] == 0x47.toByte() && b[i + 188] == 0x47.toByte() && b[i + 376] == 0x47.toByte()) return i
+        }
+        return 0
+    }
+
+    /** Reads a playlist with the site's headers (to learn its segment format). */
+    fun fetchText(url: String, h: Headers): Pair<String, String>? = runCatching {
+        val c = URL(url).openConnection() as HttpURLConnection
+        c.connectTimeout = 10_000; c.readTimeout = 15_000
+        h.referer?.let { c.setRequestProperty("Referer", it) }
+        h.userAgent?.let { c.setRequestProperty("User-Agent", it) }
+        h.cookie?.let { c.setRequestProperty("Cookie", it) }
+        try { if (c.responseCode in 200..299) c.inputStream.use { it.readBytes() }.toString(Charsets.UTF_8) to c.url.toString() else null } finally { c.disconnect() }
+    }.getOrNull()
 
     private val uriAttr = Regex("URI=\"([^\"]+)\"")
 
