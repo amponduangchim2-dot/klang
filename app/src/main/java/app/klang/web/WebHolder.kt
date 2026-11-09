@@ -111,7 +111,34 @@ class WebHolder(private val activity: Activity) {
             CookieManager.getInstance().setAcceptCookie(true)
             webViewClient = Client()
             webChromeClient = Chrome()
+            // in every frame (players usually sit in an iframe): long films carry on where they were left
+            if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)) {
+                runCatching { androidx.webkit.WebViewCompat.addDocumentStartJavaScript(this, RESUME_JS, setOf("*")) }
+            }
         }
+
+    private companion object {
+        const val RESUME_JS = """(function(){
+ if (window.__klangPos) return; window.__klangPos = 1;
+ var K = 'klang-pos:' + location.href.split('#')[0];
+ function hook(v) {
+  if (v.__klang) return; v.__klang = 1;
+  v.addEventListener('loadedmetadata', function() {
+   try { var t = parseFloat(localStorage.getItem(K) || '0');
+    if (t > 30 && v.duration && t < v.duration - 30) v.currentTime = t; } catch (e) {}
+  });
+  var last = 0;
+  v.addEventListener('timeupdate', function() {
+   var n = Date.now(); if (n - last < 5000) return; last = n;
+   try { if (v.duration && v.duration > 300 && isFinite(v.duration)) {
+    if (v.currentTime > v.duration - 30) localStorage.removeItem(K); else localStorage.setItem(K, String(v.currentTime)); } } catch (e) {}
+  });
+ }
+ function scan() { document.querySelectorAll('video').forEach(hook); }
+ try { new MutationObserver(scan).observe(document.documentElement || document, { childList: true, subtree: true }); } catch (e) {}
+ document.addEventListener('DOMContentLoaded', scan);
+})();"""
+    }
 
     // ------------------------------------------------------------------ actions
 
@@ -172,8 +199,8 @@ class WebHolder(private val activity: Activity) {
     fun exitFullscreen() { fullCallback?.onCustomViewHidden() ; hideFull() }
 
     /** Leaving the screen: stop films and sound on the page. */
-    fun pause() {
-        if (fullView != null) return
+    fun pause(force: Boolean = false) {
+        if (fullView != null && !force) return
         runCatching { view.evaluateJavascript("document.querySelectorAll('video,audio').forEach(function(m){try{m.pause()}catch(e){}})", null) }
         view.onPause()
     }

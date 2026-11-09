@@ -2,4 +2,10 @@
 <resources>
     <string name="widget_desc">Turntable: the record spins while music plays</string>
     <string name="widget_name">Klang Audio turntable</string>
+    <string name="sc_resume">carry on</string>
+    <string name="sc_resume_long">carry on playing</string>
+    <string name="sc_search">youtube</string>
+    <string name="sc_search_long">search youtube</string>
+    <string name="sc_web">web</string>
+    <string name="sc_web_long">open the web browser</string>
 </resources>

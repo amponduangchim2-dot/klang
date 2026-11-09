@@ -181,6 +181,10 @@ class OptionsActions(
     val setKeepOn: (Boolean) -> Unit,
     val setSkipTalk: (Boolean) -> Unit,
     val setYtOpus: (Boolean) -> Unit,
+    val setEqPerDevice: (Boolean) -> Unit,
+    val setAutoPlayBt: (Boolean) -> Unit,
+    val backup: () -> Unit,
+    val restore: () -> Unit,
     val openSkins: () -> Unit,
     val checkUpdate: () -> Unit,
     val download: (String) -> Unit,
@@ -217,6 +221,34 @@ fun OptionsScreen(o: OptionsUi, skipTalk: Boolean, a: OptionsActions) {
                 else "AAC 128 kbps, the most compatible stream.",
                 o.ytOpus
             ) { a.setYtOpus(!o.ytOpus) }
+        }
+
+        Tile(Modifier.fillMaxWidth()) {
+            Text("car & headphones", style = K.label)
+            Spacer(Modifier.height(8.dp))
+            SwitchRow(
+                "an EQ for each output",
+                "The car, each pair of headphones and the speaker keep their own EQ." +
+                    (if (o.outputName.isNotBlank()) " Now: ${o.outputName}." else ""),
+                o.eqPerDevice
+            ) { a.setEqPerDevice(!o.eqPerDevice) }
+            Spacer(Modifier.height(10.dp))
+            SwitchRow(
+                "play when Bluetooth connects",
+                "Carries on with the last playlist when the car or a speaker connects. If Android holds it back, a notification offers one tap to play.",
+                o.autoPlayBt
+            ) { a.setAutoPlayBt(!o.autoPlayBt) }
+        }
+
+        Tile(Modifier.fillMaxWidth()) {
+            Text("backup", style = K.label)
+            Spacer(Modifier.height(8.dp))
+            Text("Settings, EQ and presets, playlists, favorites, play counts, history and bookmarks in one file. Keep it in Drive or send it to your new phone.", style = K.label)
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                TextKey("save backup", a.backup, Modifier.weight(1f).height(40.dp))
+                TextKey("restore", a.restore, Modifier.weight(1f).height(40.dp))
+            }
         }
 
         Tile(Modifier.fillMaxWidth()) {

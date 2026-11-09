@@ -54,7 +54,12 @@ class PlaybackService : MediaLibraryService() {
     companion object {
         /** True while the player exists in this process (a killed app never looks "playing" on the widget). */
         @Volatile var alive = false
+        @Volatile var isPlayingNow = false
+        /** Start and carry on with the last playlist (Bluetooth connected, shortcut). */
+        const val ACTION_RESUME = "app.klang.action.RESUME"
     }
+
+    private var outputs: OutputProfiles? = null
 
     private var session: MediaLibrarySession? = null
     private val handler = Handler(Looper.getMainLooper())
@@ -100,6 +105,7 @@ class PlaybackService : MediaLibraryService() {
         alive = true
         val context = this
         AudioEngine.loadSettings(context)
+        outputs = OutputProfiles(context).also { it.start() }
 
         val sink = DefaultAudioSink.Builder(context)
             .setAudioProcessors(arrayOf<AudioProcessor>(KlangAudioProcessor()))
@@ -157,7 +163,49 @@ class PlaybackService : MediaLibraryService() {
         if (player == null || !player.playWhenReady || player.mediaItemCount == 0) stopSelf()
     }
 
+    override fun onStartCommand(intent: android.content.Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_RESUME) {
+            holdForeground()
+            resumeNow()
+            return START_NOT_STICKY
+        }
+        return super.onStartCommand(intent, flags, startId)
+    }
+
+    /** Started with startForegroundService: show something at once, the player's own notification follows. */
+    private fun holdForeground() {
+        val nm = getSystemService(android.app.NotificationManager::class.java)
+        nm.createNotificationChannel(android.app.NotificationChannel("starting", "Starting playback", android.app.NotificationManager.IMPORTANCE_LOW))
+        val n = androidx.core.app.NotificationCompat.Builder(this, "starting")
+            .setSmallIcon(app.klang.R.drawable.ic_launcher_fg)
+            .setContentTitle("Klang Audio")
+            .setContentText("Carrying on with your music")
+            .build()
+        runCatching {
+            androidx.core.app.ServiceCompat.startForeground(this, 8, n,
+                if (android.os.Build.VERSION.SDK_INT >= 29) android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0)
+        }
+    }
+
+    private fun resumeNow() {
+        val player = session?.player ?: return
+        if (player.mediaItemCount > 0) { player.prepare(); player.play(); return }
+        io.execute {
+            val items = runCatching { resumeItems() }.getOrNull()
+            handler.post {
+                if (items == null || items.mediaItems.isEmpty()) {
+                    androidx.core.app.ServiceCompat.stopForeground(this, androidx.core.app.ServiceCompat.STOP_FOREGROUND_REMOVE)
+                    return@post
+                }
+                player.setMediaItems(items.mediaItems, items.startIndex, items.startPositionMs)
+                player.prepare()
+                player.play()
+            }
+        }
+    }
+
     override fun onDestroy() {
+        outputs?.stop()
         handler.removeCallbacksAndMessages(null)
         session?.run {
             saveQueue(player)
@@ -188,6 +236,8 @@ class PlaybackService : MediaLibraryService() {
         override fun onAudioSessionIdChanged(audioSessionId: Int) = openEffects(audioSessionId)
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            isPlayingNow = isPlaying
+            if (isPlaying) runCatching { getSystemService(android.app.NotificationManager::class.java).cancel(8) }
             handler.removeCallbacks(volumeLoop)
             handler.post(volumeLoop)
         }

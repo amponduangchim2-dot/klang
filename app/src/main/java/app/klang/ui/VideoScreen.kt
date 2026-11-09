@@ -12,6 +12,9 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -106,7 +109,7 @@ private fun qualityLabel(h: Int) = when {
  */
 @OptIn(UnstableApi::class)
 @Composable
-fun VideoScreen(item: YtItem, fullscreen: Boolean, setFullscreen: (Boolean) -> Unit, a: VideoActions) {
+fun VideoScreen(item: YtItem, fullscreen: Boolean, setFullscreen: (Boolean) -> Unit, pip: Boolean, setPipWanted: (Boolean) -> Unit, a: VideoActions) {
     val context = LocalContext.current
     val activity = context as? Activity
 
@@ -132,6 +135,29 @@ fun VideoScreen(item: YtItem, fullscreen: Boolean, setFullscreen: (Boolean) -> U
     val sharpenNow = remember { floatArrayOf(prefs.getFloat("videoSharpen", 0.5f)) }   // read by the shader every frame
     val screenShort = remember { context.resources.displayMetrics.let { minOf(it.widthPixels, it.heightPixels) } }
     var plan by remember(item.url) { mutableStateOf<VideoPlan?>(null) }
+    // ---- where each clip was left, so long videos carry on
+    val vid = remember(item.url) { app.klang.youtube.YouTube.videoId(item.url) ?: item.url }
+    fun positions(): org.json.JSONObject = runCatching { org.json.JSONObject(prefs.getString("videoPos", "{}")!!) }.getOrDefault(org.json.JSONObject())
+    fun savePos() {
+        val pos = player.currentPosition
+        val dur = player.duration
+        if (player.currentMediaItem == null || plan?.live == true || dur <= 0) return
+        val m = positions()
+        if (pos < 30_000 || pos > dur - 30_000) m.remove(vid) else m.put(vid, pos)
+        // keep the 60 most recent
+        val keys = m.keys().asSequence().toList()
+        if (keys.size > 60) keys.take(keys.size - 60).forEach { m.remove(it) }
+        prefs.edit().putString("videoPos", m.toString()).apply()
+    }
+    var resumedFrom by remember(item.url) { mutableStateOf(0L) }
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lifecycle) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_STOP) { savePos(); player.pause() }
+        }
+        lifecycle.addObserver(obs)
+        onDispose { lifecycle.removeObserver(obs) }
+    }
     var error by remember(item.url) { mutableStateOf<String?>(null) }
     var chosen by remember(item.url) { mutableIntStateOf(-1) }   // height; 0 = auto (live)
     var playing by remember { mutableStateOf(false) }
@@ -171,7 +197,7 @@ fun VideoScreen(item: YtItem, fullscreen: Boolean, setFullscreen: (Boolean) -> U
         onDispose { player.removeListener(l) }
     }
     DisposableEffect(Unit) {
-        onDispose { player.release() }
+        onDispose { savePos(); player.release() }
     }
 
     // ---- find the streams
@@ -212,7 +238,8 @@ fun VideoScreen(item: YtItem, fullscreen: Boolean, setFullscreen: (Boolean) -> U
             }
             return@LaunchedEffect
         }
-        val keep = player.currentPosition.takeIf { player.currentMediaItem != null } ?: 0L
+        val keep = player.currentPosition.takeIf { player.currentMediaItem != null }
+            ?: positions().optLong(vid, 0L).also { if (it > 0) resumedFrom = it }
         val q = p.qualities.firstOrNull { it.height == chosen }
         val source: MediaSource? = when {
             q != null && p.audioUrl != null -> MergingMediaSource(true, progressive(q.url), progressive(p.audioUrl))
@@ -227,7 +254,9 @@ fun VideoScreen(item: YtItem, fullscreen: Boolean, setFullscreen: (Boolean) -> U
 
     // ---- position ticker
     LaunchedEffect(player) {
+        var n = 0
         while (true) {
+            if (++n % 20 == 0 && player.isPlaying) savePos()
             posMs = player.currentPosition.coerceAtLeast(0)
             durMs = player.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: (plan?.durationSec ?: 0L) * 1000
             delay(250)
@@ -262,6 +291,8 @@ fun VideoScreen(item: YtItem, fullscreen: Boolean, setFullscreen: (Boolean) -> U
     }
 
     BackHandler { if (fullscreen) setFullscreen(false) else a.back() }
+    LaunchedEffect(playing) { setPipWanted(playing) }
+    DisposableEffect(Unit) { onDispose { setPipWanted(false) } }
 
     val p = plan
     val live = p?.live == true || item.live
@@ -274,6 +305,7 @@ fun VideoScreen(item: YtItem, fullscreen: Boolean, setFullscreen: (Boolean) -> U
     }
     val status = when {
         error != null -> error!!
+        resumedFrom > 0 && posMs < resumedFrom + 8_000 && !buffering -> "carried on from ${formatTime(resumedFrom)}"
         p == null -> "finding streams…"
         buffering -> "loading…"
         else -> listOfNotNull(
@@ -285,13 +317,71 @@ fun VideoScreen(item: YtItem, fullscreen: Boolean, setFullscreen: (Boolean) -> U
     val togglePlay = { if (player.isPlaying) player.pause() else { if (player.playbackState == Player.STATE_ENDED) player.seekTo(0); player.play() } }
     val seekFrac: (Float) -> Unit = { f -> if (durMs > 0) player.seekTo((f * durMs).toLong()) }
 
+    if (pip) {
+        Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+            VideoSurface(player, Modifier.fillMaxHeight().aspectRatio(aspect, matchHeightConstraintsFirst = true))
+        }
+        return
+    }
+
     if (fullscreen) {
+        val audio = remember { context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager }
+        var hint by remember { mutableStateOf<String?>(null) }
+        var hintAt by remember { mutableLongStateOf(0L) }
+        LaunchedEffect(hintAt) { if (hintAt > 0) { delay(900); hint = null } }
+        fun show(t: String) { hint = t; hintAt = System.currentTimeMillis() }
         Box(
             Modifier.fillMaxSize().background(Color.Black)
-                .clickable(remember { MutableInteractionSource() }, indication = null) { controlsVisible = !controlsVisible; poke++ },
+                // tap: controls · double tap left/right: back/forward 10 s
+                .pointerInput(live) {
+                    detectTapGestures(
+                        onTap = { controlsVisible = !controlsVisible; poke++ },
+                        onDoubleTap = { o ->
+                            if (!live) {
+                                if (o.x < size.width / 2f) { player.seekBack(); show("− 10 s") } else { player.seekForward(); show("+ 10 s") }
+                            }
+                        }
+                    )
+                }
+                // slide up/down: left side light, right side volume, middle down leaves full screen
+                .pointerInput(Unit) {
+                    var side = 0
+                    var acc = 0f
+                    detectVerticalDragGestures(
+                        onDragStart = { o -> side = when { o.x < size.width / 3f -> -1; o.x > size.width * 2f / 3f -> 1; else -> 0 }; acc = 0f },
+                        onDragEnd = { if (side == 0 && acc > size.height / 5f) setFullscreen(false) },
+                    ) { change, dy ->
+                        change.consume()
+                        acc += dy
+                        when (side) {
+                            1 -> {
+                                val step = size.height / 24f
+                                if (kotlin.math.abs(acc) > step) {
+                                    val dir = if (acc < 0) android.media.AudioManager.ADJUST_RAISE else android.media.AudioManager.ADJUST_LOWER
+                                    audio.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, dir, 0)
+                                    acc = 0f
+                                    val v = audio.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
+                                    val max = audio.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
+                                    show("volume ${v * 100 / max}%")
+                                }
+                            }
+                            -1 -> activity?.window?.let { win ->
+                                val lp = win.attributes
+                                val cur = if (lp.screenBrightness < 0) 0.5f else lp.screenBrightness
+                                lp.screenBrightness = (cur - dy / size.height).coerceIn(0.02f, 1f)
+                                win.attributes = lp
+                                show("light ${(lp.screenBrightness * 100).toInt()}%")
+                            }
+                        }
+                    }
+                },
             contentAlignment = Alignment.Center
         ) {
             VideoSurface(player, Modifier.fillMaxHeight().aspectRatio(aspect, matchHeightConstraintsFirst = true))
+            hint?.let {
+                Text(it, style = K.lcdText.copy(color = Color.White, fontSize = 18.sp),
+                    modifier = Modifier.clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = 0.6f)).padding(horizontal = 18.dp, vertical = 10.dp))
+            }
             if (controlsVisible) {
                 Column(
                     Modifier.align(Alignment.BottomCenter).fillMaxWidth()

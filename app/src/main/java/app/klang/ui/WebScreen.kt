@@ -74,14 +74,36 @@ import app.klang.ui.components.Tile
  * A page's own full-screen button turns the phone sideways and fills the screen.
  */
 @Composable
-fun WebScreen(w: WebHolder, onFullscreen: (Boolean) -> Unit, onBack: () -> Unit) {
+fun WebScreen(w: WebHolder, onFullscreen: (Boolean) -> Unit, onBack: () -> Unit, pip: Boolean = false, setPipWanted: (Boolean) -> Unit = {}) {
     val activity = LocalContext.current as? Activity
     val focus = LocalFocusManager.current
     val full = w.fullView
 
     DisposableEffect(Unit) {
         w.resume()
-        onDispose { w.pause() }
+        onDispose { w.pause(); setPipWanted(false) }
+    }
+    // a film on the page: leaving the app floats it in a small window
+    LaunchedEffect(w.media.isNotEmpty(), full != null) { setPipWanted(w.media.isNotEmpty() || full != null) }
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lifecycle) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            when (e) {
+                androidx.lifecycle.Lifecycle.Event.ON_STOP -> w.pause(force = true)
+                androidx.lifecycle.Lifecycle.Event.ON_START -> w.resume()
+                else -> {}
+            }
+        }
+        lifecycle.addObserver(obs)
+        onDispose { lifecycle.removeObserver(obs) }
+    }
+
+    if (pip) {
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+            if (full != null) AndroidView(factory = { full.also { v -> (v.parent as? ViewGroup)?.removeView(v) } }, modifier = Modifier.fillMaxSize())
+            else AndroidView(factory = { w.view.also { v -> (v.parent as? ViewGroup)?.removeView(v) } }, modifier = Modifier.fillMaxSize())
+        }
+        return
     }
 
     // full screen for a page's video

@@ -19,6 +19,10 @@ round OP-1 style keys.
 - Cast films from the web screen to a TV: Google Cast (Chromecast, Google TV) and DLNA (Samsung, LG, Sony…),
   through a relay on the phone that keeps the site's headers and adds CORS
 - Video screen: up to 4K (the best the phone decodes smoothly), real-time sharpening (contrast adaptive sharpening on the GPU)
+- Picture in picture for the video and web screens; double-tap to skip, slide for volume and light in full screen;
+  long films and clips carry on where they were left
+- An EQ for each output (car, headphones, speaker); play when Bluetooth connects; launcher shortcuts;
+  backup and restore of settings, EQ, playlists and library
 - Synced lyrics from LRCLIB
 - Skins, share card (square / story), sleep timer, fade between songs, big controls
 - Android Auto (browse, voice, search of the phone and YouTube) with OP-1 screen covers, the clip's picture for

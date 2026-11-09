@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="resume" android:enabled="true" android:icon="@drawable/sc_play"
+        android:shortcutShortLabel="@string/sc_resume" android:shortcutLongLabel="@string/sc_resume_long">
+        <intent android:action="app.klang.action.SHORTCUT_RESUME" android:targetPackage="app.klang.player" android:targetClass="app.klang.MainActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="search" android:enabled="true" android:icon="@drawable/sc_search"
+        android:shortcutShortLabel="@string/sc_search" android:shortcutLongLabel="@string/sc_search_long">
+        <intent android:action="app.klang.action.SHORTCUT_SEARCH" android:targetPackage="app.klang.player" android:targetClass="app.klang.MainActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="web" android:enabled="true" android:icon="@drawable/sc_web"
+        android:shortcutShortLabel="@string/sc_web" android:shortcutLongLabel="@string/sc_web_long">
+        <intent android:action="app.klang.action.SHORTCUT_WEB" android:targetPackage="app.klang.player" android:targetClass="app.klang.MainActivity" />
+    </shortcut>
+</shortcuts>

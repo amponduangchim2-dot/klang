@@ -123,6 +123,9 @@ data class OptionsUi(
     val bigControls: Boolean = false,
     val keepScreenOn: Boolean = false,
     val ytOpus: Boolean = true,
+    val eqPerDevice: Boolean = true,
+    val autoPlayBt: Boolean = false,
+    val outputName: String = "",
     val versionName: String = "",
     val versionCode: Long = 0,
     val update: UpdateUi = UpdateUi(),
@@ -849,6 +852,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             bigControls = prefs.getBoolean("bigControls", false),
             keepScreenOn = prefs.getBoolean("keepScreenOn", false),
             ytOpus = prefs.getBoolean("ytOpus", true),
+            eqPerDevice = prefs.getBoolean("eqPerDevice", true),
+            autoPlayBt = prefs.getBoolean("autoPlayBt", false),
+            outputName = prefs.getString("outputName", "").orEmpty(),
             versionName = info?.versionName ?: "",
             versionCode = code,
         )
@@ -880,6 +886,42 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     fun setBigControls(on: Boolean) {
         _options.value = _options.value.copy(bigControls = on)
         prefs.edit().putBoolean("bigControls", on).apply()
+    }
+
+    fun setEqPerDevice(on: Boolean) {
+        prefs.edit().putBoolean("eqPerDevice", on).apply()
+        // start from the output in use now
+        if (on) prefs.edit().remove("eqDevLast").apply()
+        _options.value = _options.value.copy(eqPerDevice = on)
+    }
+
+    fun setAutoPlayBt(on: Boolean) {
+        prefs.edit().putBoolean("autoPlayBt", on).apply()
+        _options.value = _options.value.copy(autoPlayBt = on)
+    }
+
+    fun refreshOutputName() {
+        _options.value = _options.value.copy(outputName = prefs.getString("outputName", "").orEmpty())
+    }
+
+    /** Saves settings, EQ, playlists and the library into one file the user picked. */
+    fun exportBackup(uri: android.net.Uri) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val r = runCatching { app.klang.backup.Backup.export(getApplication(), uri) }
+            _message.value = r.fold({ "Backup saved ($it items)" }, { it.message ?: "Could not save the backup" })
+        }
+    }
+
+    /** Puts a backup back, then [restart]s the app so everything reads it. */
+    fun importBackup(uri: android.net.Uri, restart: () -> Unit) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val r = runCatching { app.klang.backup.Backup.import(getApplication(), uri) }
+            r.onSuccess {
+                _message.value = "Restored. Klang Audio restarts…"
+                kotlinx.coroutines.delay(1200)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { restart() }
+            }.onFailure { _message.value = it.message ?: "Could not read the backup" }
+        }
     }
 
     fun setKeepScreenOn(on: Boolean) {

@@ -159,6 +159,56 @@ class MainActivity : ComponentActivity() {
         super.onStop()
     }
 
+    // ---- picture in picture, launcher shortcuts
+
+    /** True while the app is a small floating window. */
+    private val inPip = androidx.compose.runtime.mutableStateOf(false)
+    /** Set by the screens: a film is on screen, so leaving the app should float it. */
+    @Volatile var pipWanted = false
+    /** A launcher shortcut to act on ("resume", "search", "web"). */
+    private val shortcut = androidx.compose.runtime.mutableStateOf<String?>(null)
+
+    private fun takeShortcut(i: Intent?) {
+        shortcut.value = when (i?.action) {
+            "app.klang.action.SHORTCUT_RESUME" -> "resume"
+            "app.klang.action.SHORTCUT_SEARCH" -> "search"
+            "app.klang.action.SHORTCUT_WEB" -> "web"
+            else -> return
+        }
+    }
+
+    /** After a restore: start fresh so every screen and the player read the restored data. */
+    private fun restartApp() {
+        stopService(Intent(this, app.klang.playback.PlaybackService::class.java))
+        val i = packageManager.getLaunchIntentForPackage(packageName)?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        if (i != null) startActivity(i)
+        finishAffinity()
+        Runtime.getRuntime().exit(0)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        takeShortcut(intent)
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (pipWanted && !isInPictureInPictureMode) {
+            runCatching {
+                enterPictureInPictureMode(
+                    android.app.PictureInPictureParams.Builder()
+                        .setAspectRatio(android.util.Rational(16, 9))
+                        .build()
+                )
+            }
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: android.content.res.Configuration) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        inPip.value = isInPictureInPictureMode
+    }
+
     override fun onDestroy() {
         webHolder?.destroy()
         webHolder = null
@@ -171,6 +221,7 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.light(AColor.TRANSPARENT, AColor.TRANSPARENT),
         )
         super.onCreate(savedInstanceState)
+        takeShortcut(intent)
 
         setContent {
             val vm: PlayerViewModel = viewModel()
@@ -255,6 +306,24 @@ class MainActivity : ComponentActivity() {
             var videoItem by remember { mutableStateOf<app.klang.youtube.YtItem?>(null) }
             var videoFull by remember { mutableStateOf(false) }
             var webFull by remember { mutableStateOf(false) }
+            val pip by inPip
+            val btPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok -> vm.setAutoPlayBt(ok) }
+            val saveBackup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri -> uri?.let { vm.exportBackup(it) } }
+            val openBackup = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                uri?.let { vm.importBackup(it) { restartApp() } }
+            }
+            LaunchedEffect(screen) { if (screen == Screen.Options) vm.refreshOutputName() }
+            val sc by shortcut
+            LaunchedEffect(sc) {
+                when (sc) {
+                    "resume" -> { screen = Screen.Player; vm.play() }
+                    "search" -> screen = Screen.Search
+                    "web" -> screen = Screen.Web
+                }
+                if (sc != null) shortcut.value = null
+            }
+            // only the video screen and the web screen float; elsewhere leaving the app just leaves
+            LaunchedEffect(screen) { if (screen != Screen.Video && screen != Screen.Web) pipWanted = false }
             var hasPermission by remember {
                 mutableStateOf(ContextCompat.checkSelfPermission(this, audioPermission) == PackageManager.PERMISSION_GRANTED)
             }
@@ -385,7 +454,7 @@ class MainActivity : ComponentActivity() {
                     .fillMaxSize()
                     .background(K.shell)
                     .then(
-                        if ((screen == Screen.Video && videoFull) || (screen == Screen.Web && webFull)) Modifier.background(androidx.compose.ui.graphics.Color.Black)
+                        if (pip || (screen == Screen.Video && videoFull) || (screen == Screen.Web && webFull)) Modifier.background(androidx.compose.ui.graphics.Color.Black)
                         else Modifier.windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 8.dp, vertical = 6.dp)
                     )
             ) {
@@ -431,11 +500,11 @@ class MainActivity : ComponentActivity() {
                         })
                     }
                     Screen.Search -> SearchScreen(searchUi, skipNonMusic, searchActions)
-                    Screen.Web -> WebScreen(web, { webFull = it }, { webFull = false; screen = Screen.Hub })
+                    Screen.Web -> WebScreen(web, { webFull = it }, { webFull = false; screen = Screen.Hub }, pip, { pipWanted = it })
                     Screen.Video -> {
                         val v = videoItem
                         if (v == null) LaunchedEffect(Unit) { screen = Screen.Search }
-                        else VideoScreen(v, videoFull, { videoFull = it }, remember(vm) {
+                        else VideoScreen(v, videoFull, { videoFull = it }, pip, { pipWanted = it }, remember(vm) {
                             VideoActions(
                                 back = { videoFull = false; screen = Screen.Search },
                                 listen = { item -> vm.playResult(item); screen = Screen.Player },
@@ -520,6 +589,15 @@ class MainActivity : ComponentActivity() {
                             setKeepOn = vm::setKeepScreenOn,
                             setSkipTalk = vm::setSkipNonMusic,
                             setYtOpus = vm::setYtOpus,
+                            setEqPerDevice = vm::setEqPerDevice,
+                            setAutoPlayBt = { on ->
+                                if (on && android.os.Build.VERSION.SDK_INT >= 31 &&
+                                    ContextCompat.checkSelfPermission(this@MainActivity, android.Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
+                                ) btPermission.launch(android.Manifest.permission.BLUETOOTH_CONNECT)
+                                else vm.setAutoPlayBt(on)
+                            },
+                            backup = { saveBackup.launch("klang-backup-" + java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date()) + ".klang") },
+                            restore = { openBackup.launch(arrayOf("*/*")) },
                             openSkins = { cameFromOptions = true; screen = Screen.Skins },
                             checkUpdate = vm::checkForUpdate,
                             download = { url -> openUrl(url) },
