@@ -6,3 +6,8 @@ local.properties
 release.jks
 *.jks
 *.keystore
+
+# ad filter lists, downloaded by CI at build time
+app/src/main/assets/adblock/easylist.txt
+app/src/main/assets/adblock/easylist-thailand.txt
+app/src/main/assets/adblock/hosts.txt

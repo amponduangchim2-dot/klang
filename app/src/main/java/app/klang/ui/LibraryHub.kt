@@ -47,6 +47,7 @@ class HubActions(
     val openLocal: () -> Unit,
     val openList: (String) -> Unit,
     val openBookmarks: () -> Unit,
+    val openWeb: () -> Unit,
     val playSaved: (String) -> Unit,
     val appendSaved: (String) -> Unit,
     val deleteSaved: (String) -> Unit,
@@ -96,6 +97,19 @@ fun LibraryHub(
             HubTile("history", "$historyCount", lastPlayed?.let { "last: ${it.title}" } ?: "recently played",
                 Modifier.weight(1f).fillMaxHeight()) { a.openList(ListKind.HISTORY) }
             HubTile("bookmarks", "$bookmarks", "youtube channels & playlists", Modifier.weight(1f).fillMaxHeight()) { a.openBookmarks() }
+        }
+
+        // web browser with ad blocking
+        Tile(Modifier.fillMaxWidth(), onClick = a.openWeb) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlineIcon(Glyph.Search, size = 30.dp)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("web", style = K.name)
+                    Text("films and sites, ads blocked", style = K.label)
+                }
+                Text("open ›", style = K.label.copy(color = K.orange))
+            }
         }
 
         // saved playlists

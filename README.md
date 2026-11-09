@@ -14,6 +14,8 @@ round OP-1 style keys.
 - YouTube search with clip covers, links, playlists and Mixes, Opus audio with AAC fallback, SponsorBlock skipping
 - Video deck: watch clips in HD (up to the best quality the phone can decode) and live streams, full screen
 - Library: favorites, most played, history, saved lists, bookmarks
+- Web browser for films and sites with ad blocking (EasyList, EasyList Thailand, Steven Black's hosts):
+  ad servers and trackers blocked, ad boxes hidden, pop-ups and unasked redirects stopped, full-screen video
 - Synced lyrics from LRCLIB
 - Skins, share card (square / story), sleep timer, fade between songs, big controls
 - Android Auto (browse, voice, search of the phone and YouTube) with OP-1 screen covers, the clip's picture for
@@ -48,6 +50,8 @@ Third-party parts:
 - AndroidX Media3 / ExoPlayer, Jetpack Compose, Coil — Apache-2.0
 - Klang Sans font: Outfit (© The Outfit Project Authors) + IBM Plex Sans Thai (© IBM Corp.),
   merged; SIL Open Font License 1.1 (texts in `app/src/main/assets/licenses/`)
+- Ad filter lists: EasyList and EasyList Thailand (GPL-3.0 / CC BY-SA 3.0), Steven Black's hosts (MIT),
+  downloaded at build time and refreshed on the phone weekly
 - Lyrics data: LRCLIB (lrclib.net). Skip segments: SponsorBlock (CC BY-NC-SA 4.0)
 
 Playing audio from YouTube is against YouTube's Terms of Service; this app is for personal use

@@ -22,6 +22,14 @@ jobs:
         with:
           gradle-version: "8.10.2"
 
+      - name: Ad filter lists
+        run: |
+          d=app/src/main/assets/adblock
+          get() { curl -fsSL --retry 3 --max-time 60 -o "$d/$1" "$2" && echo "$1: $(wc -l < "$d/$1") lines" || echo "::warning::Could not download $1; the app will fetch it on the phone."; }
+          get easylist.txt https://easylist.to/easylist/easylist.txt
+          get easylist-thailand.txt https://raw.githubusercontent.com/easylist-thailand/easylist-thailand/master/subscription/easylist-thailand.txt
+          get hosts.txt https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
+
       - name: Signing key from secrets
         env:
           KS_B64: ${{ secrets.KLANG_KEYSTORE_B64 }}

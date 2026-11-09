@@ -46,6 +46,7 @@ import app.klang.ui.SearchActions
 import app.klang.ui.SearchScreen
 import app.klang.ui.VideoActions
 import app.klang.ui.VideoScreen
+import app.klang.ui.WebScreen
 import app.klang.ui.PlaylistActions
 import app.klang.ui.PlaylistScreen
 import app.klang.ui.LibraryScreen
@@ -72,6 +73,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
+    /** The browser stays alive while the app is open, so a film keeps its place between screens. */
+    private var webHolder: app.klang.web.WebHolder? = null
+    private val web: app.klang.web.WebHolder get() = webHolder ?: app.klang.web.WebHolder(this).also { webHolder = it }
+
 
     private val audioPermission: String
         get() = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
@@ -152,6 +157,12 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         playerVm.visible = false
         super.onStop()
+    }
+
+    override fun onDestroy() {
+        webHolder?.destroy()
+        webHolder = null
+        super.onDestroy()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -243,6 +254,7 @@ class MainActivity : ComponentActivity() {
             var cameFromOptions by rememberSaveable { mutableStateOf(false) }
             var videoItem by remember { mutableStateOf<app.klang.youtube.YtItem?>(null) }
             var videoFull by remember { mutableStateOf(false) }
+            var webFull by remember { mutableStateOf(false) }
             var hasPermission by remember {
                 mutableStateOf(ContextCompat.checkSelfPermission(this, audioPermission) == PackageManager.PERMISSION_GRANTED)
             }
@@ -373,7 +385,7 @@ class MainActivity : ComponentActivity() {
                     .fillMaxSize()
                     .background(K.shell)
                     .then(
-                        if (screen == Screen.Video && videoFull) Modifier.background(androidx.compose.ui.graphics.Color.Black)
+                        if ((screen == Screen.Video && videoFull) || (screen == Screen.Web && webFull)) Modifier.background(androidx.compose.ui.graphics.Color.Black)
                         else Modifier.windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 8.dp, vertical = 6.dp)
                     )
             ) {
@@ -419,6 +431,7 @@ class MainActivity : ComponentActivity() {
                         })
                     }
                     Screen.Search -> SearchScreen(searchUi, skipNonMusic, searchActions)
+                    Screen.Web -> WebScreen(web, { webFull = it }, { webFull = false; screen = Screen.Hub })
                     Screen.Video -> {
                         val v = videoItem
                         if (v == null) LaunchedEffect(Unit) { screen = Screen.Search }
@@ -453,6 +466,7 @@ class MainActivity : ComponentActivity() {
                                 openLocal = { screen = Screen.Library },
                                 openList = { listKind = it; screen = Screen.Songs },
                                 openBookmarks = { screen = Screen.Bookmarks },
+                                openWeb = { screen = Screen.Web },
                                 playSaved = { vm.loadList(it, false); screen = Screen.Player },
                                 appendSaved = { vm.loadList(it, true) },
                                 deleteSaved = vm::deleteList,
