@@ -243,7 +243,7 @@ class WebHolder(private val activity: Activity) {
          */
         const val PIP_JS = """(function(){
  if (window.__klangPip) return;
- var marked = [];
+ var marked = [], kids = {}, seq = 0, pick = null;
  function css(on) {
   var d = document, s = d.getElementById('klang-pip-css');
   if (on && !s) {
@@ -251,8 +251,8 @@ class WebHolder(private val activity: Activity) {
    s.textContent = 'html.klang-pip,html.klang-pip body{background:#000!important;overflow:hidden!important}' +
     'html.klang-pip body *{visibility:hidden!important}' +
     'html.klang-pip .klang-pip-el,html.klang-pip .klang-pip-el *{visibility:visible!important}' +
-    'html.klang-pip .klang-pip-up{transform:none!important;filter:none!important;contain:none!important;will-change:auto!important}' +
-    'html.klang-pip .klang-pip-el{position:fixed!important;left:0!important;top:0!important;right:0!important;bottom:0!important;width:100vw!important;height:100vh!important;max-width:none!important;max-height:none!important;margin:0!important;padding:0!important;border:0!important;transform:none!important;z-index:2147483647!important;background:#000!important;object-fit:contain!important}';
+    'html.klang-pip .klang-pip-up{transform:none!important;filter:none!important;backdrop-filter:none!important;perspective:none!important;contain:none!important;will-change:auto!important;clip-path:none!important;mask:none!important;opacity:1!important}' +
+    'html.klang-pip .klang-pip-el{position:fixed!important;left:0!important;top:0!important;right:0!important;bottom:0!important;width:100vw!important;height:100vh!important;max-width:none!important;max-height:none!important;min-width:0!important;min-height:0!important;margin:0!important;padding:0!important;border:0!important;transform:none!important;opacity:1!important;display:block!important;z-index:2147483647!important;background:#000!important;object-fit:contain!important}';
    (d.head || d.documentElement).appendChild(s);
   }
   if (on) d.documentElement.classList.add('klang-pip'); else d.documentElement.classList.remove('klang-pip');
@@ -261,34 +261,50 @@ class WebHolder(private val activity: Activity) {
   el.classList.add('klang-pip-el'); marked.push(el);
   for (var p = el.parentElement; p && p !== document.documentElement; p = p.parentElement) { p.classList.add('klang-pip-up'); marked.push(p); }
  }
- function clear() { marked.forEach(function(el){ el.classList.remove('klang-pip-el'); el.classList.remove('klang-pip-up'); }); marked = []; }
- function best() {
-  var b = null, bs = 0;
-  [].slice.call(document.querySelectorAll('video')).forEach(function(v){
-   var r = v.getBoundingClientRect(), sc = r.width * r.height + (v.paused ? 0 : 1e9) + (v.readyState > 0 ? 1e6 : 0);
-   if (sc > bs) { bs = sc; b = v; }
-  });
-  return b;
+ function clear() { marked.forEach(function(el){ el.classList.remove('klang-pip-el'); el.classList.remove('klang-pip-up'); }); marked = []; css(false); }
+ // the film: playing with sound beats playing muted (ads, previews) beats loaded beats big
+ function score(v) {
+  var r = v.getBoundingClientRect(), a = Math.max(0, r.width) * Math.max(0, r.height);
+  var s = Math.min(a, 4e6);
+  if (v.readyState >= 2) s += 1e7;
+  if (v.currentTime > 0) s += 1e7;
+  if (!v.paused) s += 1e8;
+  if (!v.paused && !v.muted && v.volume > 0) s += 1e9;
+  if (isFinite(v.duration) && v.duration > 600) s += 5e7;
+  return s;
  }
- function tellParent() { if (window.parent !== window) try { window.parent.postMessage({ klangPipHas: 1 }, '*'); } catch (e) {} }
- function apply(on) {
+ function local() {
+  var b = null, bs = 0;
+  [].slice.call(document.querySelectorAll('video')).forEach(function(v){ var s = score(v); if (s > bs) { bs = s; b = v; } });
+  return { el: b, s: bs };
+ }
+ function frameOf(src) { var fs = document.querySelectorAll('iframe,frame'); for (var i = 0; i < fs.length; i++) if (fs[i].contentWindow === src) return fs[i]; return null; }
+ // ask this page and every frame below it where the film is; answer with the best score
+ function ask(done) {
+  var id = ++seq, me = local(), best = { s: me.s, where: me.el ? 'here' : null, el: me.el };
+  kids[id] = function(src, s) { if (s > best.s) { var f = frameOf(src); if (f) best = { s: s, where: 'frame', el: f, win: src }; } };
+  var n = window.frames.length;
+  for (var i = 0; i < n; i++) try { window.frames[i].postMessage({ klangPipAsk: id }, '*'); } catch (e) {}
+  setTimeout(function(){ delete kids[id]; pick = best; done(best); }, n ? 350 : 0);
+ }
+ function go() {
   clear();
-  var v = on ? best() : null;
-  if (v) { css(true); mark(v); tellParent(); }
-  else {
-   if (!on) css(false);
-   for (var i = 0; i < window.frames.length; i++) try { window.frames[i].postMessage({ klangPip: 1, on: !!on }, '*'); } catch (e) {}
-  }
+  var p = pick; if (!p || !p.el) return;
+  css(true); mark(p.el);
+  if (p.where === 'frame') try { p.win.postMessage({ klangPipGo: 1 }, '*'); } catch (e) {}
+ }
+ function off() {
+  clear(); pick = null;
+  for (var i = 0; i < window.frames.length; i++) try { window.frames[i].postMessage({ klangPipOff: 1 }, '*'); } catch (e) {}
  }
  window.addEventListener('message', function(e){
   var d = e.data; if (!d || typeof d !== 'object') return;
-  if (d.klangPip) apply(d.on);
-  else if (d.klangPipHas) {
-   var fs = document.querySelectorAll('iframe');
-   for (var i = 0; i < fs.length; i++) if (fs[i].contentWindow === e.source) { css(true); mark(fs[i]); tellParent(); }
-  }
+  if (d.klangPipAsk) ask(function(b){ try { e.source.postMessage({ klangPipScore: d.klangPipAsk, s: b.s }, '*'); } catch (x) {} });
+  else if (d.klangPipScore && kids[d.klangPipScore]) kids[d.klangPipScore](e.source, d.s);
+  else if (d.klangPipGo) go();
+  else if (d.klangPipOff) off();
  });
- window.__klangPip = apply;
+ window.__klangPip = function(on) { if (on) ask(function(){ go(); }); else off(); };
 })();"""
         const val RESUME_JS = """(function(){
  if (window.__klangPos) return; window.__klangPos = 1;
