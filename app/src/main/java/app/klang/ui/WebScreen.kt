@@ -100,13 +100,9 @@ fun WebScreen(w: WebHolder, onFullscreen: (Boolean) -> Unit, onBack: () -> Unit,
 
     // floating window: the film alone, not the page around it
     LaunchedEffect(pip) { if (full == null) w.focusFilm(pip) }
-    if (pip) {
-        Box(Modifier.fillMaxSize().background(Color.Black)) {
-            if (full != null) AndroidView(factory = { full.also { v -> (v.parent as? ViewGroup)?.removeView(v) } }, modifier = Modifier.fillMaxSize())
-            else AndroidView(factory = { w.view.also { v -> (v.parent as? ViewGroup)?.removeView(v) } }, modifier = Modifier.fillMaxSize())
-        }
-        return
-    }
+    // The page is never moved to another view for the floating window: a WebView taken off the
+    // screen and put back loses its video picture (black) and pauses it. The same layout is kept,
+    // with everything but the page left out.
 
     // full screen for a page's video
     LaunchedEffect(full != null) {
@@ -153,10 +149,10 @@ fun WebScreen(w: WebHolder, onFullscreen: (Boolean) -> Unit, onBack: () -> Unit,
     // the page stays attached under a full-screen video, which needs it to keep playing
     Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        ScreenHeader("web", "browser", onBack)
+        if (!pip) ScreenHeader("web", "browser", onBack)
         Panel(Modifier.fillMaxWidth().weight(1f)) {
             // ---- address on the display
-            Tile(Modifier.fillMaxWidth(), padding = 6.dp) {
+            if (!pip) Tile(Modifier.fillMaxWidth(), padding = 6.dp) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     LcdBox(Modifier.weight(1f), padding = 10.dp) {
                         Box {
@@ -185,26 +181,26 @@ fun WebScreen(w: WebHolder, onFullscreen: (Boolean) -> Unit, onBack: () -> Unit,
             }
 
             // ---- the page
-            Tile(Modifier.fillMaxWidth().weight(1f), padding = 4.dp) {
-                Box(Modifier.fillMaxSize().clip(RoundedCornerShape(6.dp)).background(Color.Black)) {
+            Tile(Modifier.fillMaxWidth().weight(1f), padding = if (pip) 0.dp else 4.dp, color = if (pip) Color.Black else K.tile) {
+                Box(Modifier.fillMaxSize().clip(RoundedCornerShape(if (pip) 0.dp else 6.dp)).background(Color.Black)) {
                     androidx.compose.runtime.key(w.privateMode) {
                         AndroidView(
                             factory = { w.view.also { v -> (v.parent as? ViewGroup)?.removeView(v) } },
                             modifier = Modifier.fillMaxSize()
                         )
                     }
-                    if (w.url.isEmpty()) StartPage(w) { focus.clearFocus(); editing = false; w.go(it.url) }
-                    if (w.progress < 100 && w.url.isNotEmpty()) {
+                    if (w.url.isEmpty() && !pip) StartPage(w) { focus.clearFocus(); editing = false; w.go(it.url) }
+                    if (w.progress < 100 && w.url.isNotEmpty() && !pip) {
                         Box(Modifier.fillMaxWidth(w.progress / 100f).height(3.dp).background(K.orange))
                     }
                 }
             }
 
             // ---- the TV remote while a film is cast
-            caster?.let { c -> if (c.current != null) CastRemote(c) }
+            if (!pip) caster?.let { c -> if (c.current != null) CastRemote(c) }
 
             // ---- status strip: casting, blocked count, stopped pop-up, per-site switch
-            if (caster?.current == null) Tile(Modifier.fillMaxWidth(), padding = 6.dp) {
+            if (!pip && caster?.current == null) Tile(Modifier.fillMaxWidth(), padding = 6.dp) {
                 val stopped = w.stopped
                 val tv = caster?.current
                 val castMsg = caster?.message
@@ -259,7 +255,7 @@ fun WebScreen(w: WebHolder, onFullscreen: (Boolean) -> Unit, onBack: () -> Unit,
                     }
                 }
             }
-            if (more) {
+            if (more && !pip) {
                 Tile(Modifier.fillMaxWidth(), padding = 6.dp) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         TextKey(if (w.adblockOn) "blocker: on" else "blocker: off", { w.toggleAdblock() }, Modifier.weight(1f).height(38.dp), active = w.adblockOn)
@@ -270,7 +266,7 @@ fun WebScreen(w: WebHolder, onFullscreen: (Boolean) -> Unit, onBack: () -> Unit,
             }
 
             // ---- round keys
-            PanelRow(height = 66.dp) {
+            if (!pip) PanelRow(height = 66.dp) {
                 Tile(Modifier.weight(1f).fillMaxHeight(), padding = 0.dp) {
                     OpKey({ w.back() }, Modifier.fillMaxSize(), "Back", capScale = 0.72f) { Chevron(left = true, on = w.canBack) }
                 }
@@ -286,7 +282,7 @@ fun WebScreen(w: WebHolder, onFullscreen: (Boolean) -> Unit, onBack: () -> Unit,
             }
         }
     }
-    if (picking) {
+    if (picking && !pip) {
         val c = w.useCaster()
         CastPicker(
             c = c,
