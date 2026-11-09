@@ -1157,7 +1157,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     }.getOrDefault(emptyList())
 
     private fun rememberQuery(q: String) {
-        val h = (listOf(q) + _search.value.history.filterNot { it.equals(q, true) }).take(20)
+        val h = (listOf(q) + loadHistory().filterNot { it.equals(q, true) }).take(20)   // the car adds searches too
         prefs.edit().putString("searchHistory", JSONArray(h).toString()).apply()
         _search.value = _search.value.copy(history = h)
     }

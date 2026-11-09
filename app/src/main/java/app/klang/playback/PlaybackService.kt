@@ -251,6 +251,9 @@ class PlaybackService : MediaLibraryService() {
         const val LOCAL = "local"
         const val LISTS = "lists"
         const val LIST = "list:"
+        const val YT = "youtube"
+        /** One past YouTube search: "ytq:" + the words. */
+        const val YTQ = "ytq:"
         /** Playable items in a folder are "parent␟index␟uri", so a tap plays the whole folder from there. */
         const val SEP = "\u001F"
     }
@@ -265,12 +268,12 @@ class PlaybackService : MediaLibraryService() {
                     .setIsBrowsable(true)
                     .setIsPlayable(false)
                     .setMediaType(if (playlists) MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS else MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
-                    .setArtworkUri(if (id.startsWith(Ids.LIST)) Covers.folderUri("list", id.removePrefix(Ids.LIST)) else Covers.folderUri(id))
+                    .setArtworkUri(when { id.startsWith(Ids.LIST) -> Covers.folderUri("list", id.removePrefix(Ids.LIST)); id.startsWith(Ids.YTQ) -> Covers.folderUri("search"); else -> Covers.folderUri(id) })
                     .build()
             )
             .build()
 
-    private fun browseItem(parent: String, index: Int, s: Song, subtitle: String? = null): MediaItem =
+    private fun browseItem(parent: String, index: Int, s: Song, subtitle: String? = null, group: String? = null): MediaItem =
         MediaItem.Builder()
             .setMediaId(parent + Ids.SEP + index + Ids.SEP + s.uri)
             .setMediaMetadata(
@@ -283,9 +286,52 @@ class PlaybackService : MediaLibraryService() {
                     .setIsBrowsable(false)
                     .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
                     .setArtworkUri(Covers.songUri(s))
+                    .apply { if (group != null) setExtras(Bundle().apply { putString("android.media.browse.CONTENT_STYLE_GROUP_TITLE_HINT", group) }) }
                     .build()
             )
             .build()
+
+    // ------------------------------------------------------------------ YouTube in the car
+
+    /** Recent YouTube results, so a tap plays the same list that was shown. */
+    private val ytCache = object : LinkedHashMap<String, List<Song>>(8, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<Song>>?) = size > 8
+    }
+
+    private fun ytSong(it: app.klang.youtube.YtItem): Song {
+        val url = YouTube.videoId(it.url)?.let { v -> YouTube.watchUrl(v) } ?: it.url
+        return Song(-((url.hashCode().toLong() and 0xffffffffL) + 1L), url, it.title, it.uploader, "YouTube", it.durationSec * 1000L, 0L)
+    }
+
+    /** YouTube results for [query]: songs only (no live streams, which the music player cannot play). Runs on the I/O thread. */
+    private fun youtubeResults(query: String): List<Song> {
+        val q = query.trim()
+        if (q.isEmpty()) return emptyList()
+        synchronized(ytCache) { ytCache[q.lowercase()] }?.let { return it }
+        val found = runCatching { YouTube.search(q) }.getOrDefault(emptyList())
+            .filter { !it.live && YouTube.isVideoLink(it.url) }
+            .map { ytSong(it) }
+            .take(40)
+        if (found.isNotEmpty()) {
+            synchronized(ytCache) { ytCache[q.lowercase()] = found }
+            rememberQuery(q)
+        }
+        return found
+    }
+
+    private fun pastQueries(): List<String> = runCatching {
+        val a = org.json.JSONArray(prefs.getString("searchHistory", "[]")); (0 until a.length()).map { a.getString(it) }
+    }.getOrDefault(emptyList())
+
+    /** Same list as the phone's search history. */
+    private fun rememberQuery(q: String) {
+        val h = (listOf(q) + pastQueries().filterNot { it.equals(q, true) }).take(20)
+        prefs.edit().putString("searchHistory", org.json.JSONArray(h).toString()).apply()
+    }
+
+    /** Car search: YouTube first, then songs on the phone. */
+    private fun searchAll(query: String): List<Pair<Song, String>> =
+        youtubeResults(query).map { it to "YouTube" } + searchLocal(query).map { it to "On this phone" }
 
     private fun localSongs(): List<Song> = runCatching { LocalMusic.load(this) }.getOrDefault(emptyList())
 
@@ -295,6 +341,7 @@ class PlaybackService : MediaLibraryService() {
         parent == Ids.MOST -> LibraryStore.get(this).mostPlayed(100).map { (s, n) -> s to "${s.artist.ifBlank { "" }}  ·  played $n×".trim(' ', '·') }
         parent == Ids.HISTORY -> LibraryStore.get(this).history(100).map { it.first to null }
         parent == Ids.LOCAL -> localSongs().sortedBy { it.title.lowercase() }.take(1500).map { it to null }
+        parent.startsWith(Ids.YTQ) -> youtubeResults(parent.removePrefix(Ids.YTQ)).map { it to null }
         parent.startsWith(Ids.LIST) -> {
             val text = SavedLists(this).read(parent.removePrefix(Ids.LIST))
             if (text == null) emptyList() else M3u.parse(text, localSongs()).first.map { it to null }
@@ -468,6 +515,7 @@ class PlaybackService : MediaLibraryService() {
                     folder(Ids.HISTORY, "Recently played"),
                     folder(Ids.LISTS, "Saved lists", playlists = true),
                     folder(Ids.LOCAL, "All songs", "music on this phone"),
+                    folder(Ids.YT, "YouTube", "your searches"),
                 )
                 return Futures.immediateFuture(LibraryResult.ofItemList(root, params))
             }
@@ -478,6 +526,8 @@ class PlaybackService : MediaLibraryService() {
             return io.submit<LibraryResult<ImmutableList<MediaItem>>> {
                 val items = if (parentId == Ids.LISTS) {
                     SavedLists(this@PlaybackService).names().map { folder(Ids.LIST + it, it, playlists = true) }
+                } else if (parentId == Ids.YT) {
+                    pastQueries().map { folder(Ids.YTQ + it, it, "YouTube search") }
                 } else {
                     songsOf(parentId).mapIndexed { i, (s, sub) -> browseItem(parentId, i, s, sub) }
                 }
@@ -500,7 +550,7 @@ class PlaybackService : MediaLibraryService() {
             session: MediaLibrarySession, browser: MediaSession.ControllerInfo, query: String, params: LibraryParams?,
         ): ListenableFuture<LibraryResult<Void>> {
             io.execute {
-                val n = searchLocal(query).size
+                val n = searchAll(query).size
                 handler.post { this@PlaybackService.session?.notifySearchResultChanged(browser, query, n, params) }
             }
             return Futures.immediateFuture(LibraryResult.ofVoid())
@@ -510,7 +560,7 @@ class PlaybackService : MediaLibraryService() {
             session: MediaLibrarySession, browser: MediaSession.ControllerInfo, query: String,
             page: Int, pageSize: Int, params: LibraryParams?,
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = io.submit<LibraryResult<ImmutableList<MediaItem>>> {
-            val items = searchLocal(query).mapIndexed { i, s -> browseItem("search:$query", i, s) }
+            val items = searchAll(query).mapIndexed { i, (s, group) -> browseItem("search:$query", i, s, group = group) }
             LibraryResult.ofItemList(page(items, page, pageSize), params)
         }
 
@@ -544,7 +594,7 @@ class PlaybackService : MediaLibraryService() {
                     return Futures.immediateFuture(MediaSession.MediaItemsWithStartPosition(list.map { Items.fromSong(it) }, index.coerceIn(0, (list.size - 1).coerceAtLeast(0)), 0L))
                 }
                 return io.submit<MediaSession.MediaItemsWithStartPosition> {
-                    val songs = if (parent.startsWith("search:")) searchLocal(parent.removePrefix("search:")) else songsOf(parent).map { it.first }
+                    val songs = if (parent.startsWith("search:")) searchAll(parent.removePrefix("search:")).map { it.first } else songsOf(parent).map { it.first }
                     val i = songs.indexOfFirst { it.uri == parts[2] }.takeIf { it >= 0 } ?: index
                     if (songs.isEmpty()) MediaSession.MediaItemsWithStartPosition(listOf(Items.fromSong(Song(-1, parts[2], single.mediaMetadata.title?.toString() ?: "", "", "", 0, 0))), 0, 0L)
                     else MediaSession.MediaItemsWithStartPosition(songs.map { Items.fromSong(it) }, i.coerceIn(0, songs.size - 1), 0L)
@@ -553,7 +603,8 @@ class PlaybackService : MediaLibraryService() {
             val query = single?.requestMetadata?.searchQuery
             if (single != null && single.mediaId.isEmpty() && query != null) {
                 return io.submit<MediaSession.MediaItemsWithStartPosition> {
-                    val found = searchLocal(query)
+                    // voice: "play ... on Klang Audio" — songs on the phone first, YouTube when none match
+                    val found = searchLocal(query).ifEmpty { youtubeResults(query) }
                     if (found.isNotEmpty()) MediaSession.MediaItemsWithStartPosition(found.map { Items.fromSong(it) }, 0, 0L)
                     else resumeItems()
                 }
