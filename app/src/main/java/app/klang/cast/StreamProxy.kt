@@ -39,6 +39,10 @@ class StreamProxy(private val context: Context) {
 
     val running: Boolean get() = server?.isClosed == false
 
+    /** For the status line: how often the TV asked, and the last thing that went wrong upstream. */
+    @Volatile var tvRequests = 0
+    @Volatile var lastProblem: String? = null
+
     /** Starts (or re-targets) the relay and returns the TV-facing address of [url]. */
     @Synchronized
     fun publish(url: String, h: Headers): String? {
@@ -49,6 +53,8 @@ class StreamProxy(private val context: Context) {
             pool.execute { acceptLoop(s) }
         }
         token = randomToken()
+        tvRequests = 0
+        lastProblem = null
         ipNow = ip
         headers = h
         hosts.clear()
@@ -75,7 +81,9 @@ class StreamProxy(private val context: Context) {
     /** TVs often look at the end of the address to know the kind of file. */
     private fun extensionOf(u: String): String {
         val path = runCatching { URI(u).path.orEmpty().lowercase() }.getOrDefault("")
-        return listOf(".m3u8", ".mp4", ".mpd", ".webm", ".ts", ".m4s", ".key", ".vtt").firstOrNull { path.endsWith(it) } ?: ""
+        listOf(".m3u8", ".mp4", ".mpd", ".webm", ".ts", ".m4s", ".key", ".vtt").firstOrNull { path.endsWith(it) }?.let { return it }
+        // pieces dressed up as pictures or pages: the TV should see them as video
+        return if (listOf(".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".html", ".htm", ".txt", ".js", ".css").any { path.endsWith(it) }) ".ts" else ""
     }
 
     @Volatile private var ipNow: String = ""
@@ -145,6 +153,7 @@ class StreamProxy(private val context: Context) {
         val path = parts.getOrNull(1) ?: return
         val reqHeaders = head.drop(1).associate { it.substringBefore(':').trim().lowercase() to it.substringAfter(':').trim() }
 
+        if (!c.inetAddress.isLoopbackAddress && c.inetAddress.hostAddress != ipNow) tvRequests++
         if (method == "OPTIONS") { status(out, 204, "No Content", cors() + listOf("Content-Length: 0")); return }
         val seg = path.trimStart('/').split('/', limit = 2)
         if (seg.size < 2 || seg[0] != token || token.isEmpty()) { status(out, 403, "Forbidden", listOf("Content-Length: 0")); return }
@@ -164,6 +173,7 @@ class StreamProxy(private val context: Context) {
         reqHeaders["range"]?.let { conn.setRequestProperty("Range", it) }
         try {
             val code = conn.responseCode
+            if (code >= 400) lastProblem = "site said $code"
             val type = conn.contentType.orEmpty()
             val finalUrl = conn.url.toString()
             val isPlaylist = type.contains("mpegurl", true) || finalUrl.substringBefore('?').endsWith(".m3u8", true) || target.substringBefore('?').endsWith(".m3u8", true)
@@ -222,15 +232,21 @@ class StreamProxy(private val context: Context) {
 
     private fun looksTs(b: ByteArray) = b.size > 376 && b[0] == 0x47.toByte() && b[188] == 0x47.toByte() && b[376] == 0x47.toByte()
 
-    /** Where the real MPEG-TS starts when a segment wears a fake PNG/JPEG/GIF header; 0 when it does not. */
+    private fun isMp4(b: ByteArray): Boolean {
+        if (b.size < 12) return false
+        val box = String(b, 4, 4, Charsets.ISO_8859_1)
+        return box == "ftyp" || box == "moof" || box == "styp" || box == "sidx" || box == "moov"
+    }
+
+    /**
+     * Where the real MPEG-TS starts when a segment wears something in front (a fake PNG/JPEG/GIF
+     * header, or any padding added to stop other players); 0 when it does not.
+     */
     private fun tsStart(b: ByteArray): Int {
-        if (b.size < 400 || looksTs(b)) return 0
-        val fake = (b[0] == 0x89.toByte() && b[1] == 'P'.code.toByte()) || (b[0] == 0xFF.toByte() && b[1] == 0xD8.toByte()) ||
-            (b[0] == 'G'.code.toByte() && b[1] == 'I'.code.toByte()) || (b[0] == 'B'.code.toByte() && b[1] == 'M'.code.toByte())
-        if (!fake) return 0
-        val limit = minOf(b.size - 377, 64 * 1024)
-        for (i in 0 until limit) {
-            if (b[i] == 0x47.toByte() && b[i + 188] == 0x47.toByte() && b[i + 376] == 0x47.toByte()) return i
+        if (b.size < 800 || looksTs(b) || isMp4(b)) return 0
+        val limit = minOf(b.size - 753, 256 * 1024)
+        for (i in 1 until limit) {
+            if (b[i] == 0x47.toByte() && b[i + 188] == 0x47.toByte() && b[i + 376] == 0x47.toByte() && b[i + 564] == 0x47.toByte() && b[i + 752] == 0x47.toByte()) return i
         }
         return 0
     }

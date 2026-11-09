@@ -167,16 +167,67 @@ class Caster(context: Context) {
         try { c.responseCode.also { if (it in 200..299) c.inputStream.use { s -> s.read(ByteArray(1024)) } } } finally { c.disconnect() }
     }.getOrDefault(-1)
 
+    // ---- what the TV reports, and a second try with the site's own address
+    private var lastMedia: CastMedia? = null
+    private var lastFmp4 = false
+    private var triedDirect = false
+    private var lastTvError: Int? = null
+
+    private fun diagnosis(): String {
+        val parts = mutableListOf<String>()
+        lastTvError?.let { parts += "tv error $it" }
+        parts += "tv asked the phone ${proxy.tvRequests}×"
+        proxy.lastProblem?.let { parts += it }
+        return parts.joinToString(" · ")
+    }
+
     private val statusCallback = object : com.google.android.gms.cast.framework.media.RemoteMediaClient.Callback() {
+        override fun onMediaError(error: com.google.android.gms.cast.MediaError) {
+            lastTvError = error.detailedErrorCode
+        }
+
         override fun onStatusUpdated() {
             val st = cast?.sessionManager?.currentCastSession?.remoteMediaClient?.mediaStatus ?: return
             playing = st.playerState == com.google.android.gms.cast.MediaStatus.PLAYER_STATE_PLAYING ||
                 st.playerState == com.google.android.gms.cast.MediaStatus.PLAYER_STATE_BUFFERING
+            if (playing) message = null
             if (st.playerState == com.google.android.gms.cast.MediaStatus.PLAYER_STATE_IDLE &&
                 st.idleReason == com.google.android.gms.cast.MediaStatus.IDLE_REASON_ERROR) {
-                message = "The TV could not play this stream. Try another server on the site, or mirror the screen."
+                val m = lastMedia
+                val s = cast?.sessionManager?.currentCastSession
+                if (!triedDirect && m != null && s != null) {
+                    // through the phone did not work: let the TV fetch the site's address itself
+                    triedDirect = true
+                    message = "trying the direct link…"
+                    sendToTv(s, m.url, m, lastFmp4)
+                } else {
+                    message = "The TV could not play this stream (${diagnosis()}). Try another server on the site, or mirror the screen."
+                }
             }
         }
+    }
+
+    private fun sendToTv(s: CastSession, url: String, media: CastMedia, fmp4: Boolean) {
+        val hls = media.mime.contains("mpegurl", true)
+        val meta = MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE).apply { putString(MediaMetadata.KEY_TITLE, media.title) }
+        val b = MediaInfo.Builder(url)
+            .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
+            .setContentType(if (hls) "application/x-mpegurl" else media.mime)
+            .setMetadata(meta)
+        if (hls) {
+            b.setHlsSegmentFormat(if (fmp4) com.google.android.gms.cast.HlsSegmentFormat.FMP4 else com.google.android.gms.cast.HlsSegmentFormat.TS)
+            b.setHlsVideoSegmentFormat(if (fmp4) com.google.android.gms.cast.HlsVideoSegmentFormat.FMP4 else com.google.android.gms.cast.HlsVideoSegmentFormat.MPEG2_TS)
+        }
+        val client = s.remoteMediaClient ?: run { message = "The TV isn't ready. Try again."; return }
+        client.unregisterCallback(statusCallback)
+        client.registerCallback(statusCallback)
+        client.load(MediaLoadRequestData.Builder().setMediaInfo(b.build()).setAutoplay(true).build())
+            .setResultCallback { r ->
+                main.post {
+                    if (r.status.isSuccess) playing = true
+                    else message = "The TV couldn't open this video (code ${r.status.statusCode} · ${diagnosis()}). Try mirroring the screen."
+                }
+            }
     }
 
     private fun loadOnCast(s: CastSession, media: CastMedia) {
@@ -197,25 +248,8 @@ class Caster(context: Context) {
             val hls = media.mime.contains("mpegurl", true)
             val fmp4 = hls && hlsIsFmp4(media)
             main.post {
-                val meta = MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE).apply { putString(MediaMetadata.KEY_TITLE, media.title) }
-                val b = MediaInfo.Builder(url)
-                    .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
-                    .setContentType(if (hls) "application/x-mpegurl" else media.mime)
-                    .setMetadata(meta)
-                if (hls) {
-                    b.setHlsSegmentFormat(if (fmp4) com.google.android.gms.cast.HlsSegmentFormat.FMP4 else com.google.android.gms.cast.HlsSegmentFormat.TS)
-                    b.setHlsVideoSegmentFormat(if (fmp4) com.google.android.gms.cast.HlsVideoSegmentFormat.FMP4 else com.google.android.gms.cast.HlsVideoSegmentFormat.MPEG2_TS)
-                }
-                val client = s.remoteMediaClient ?: run { message = "The TV isn't ready. Try again."; return@post }
-                client.unregisterCallback(statusCallback)
-                client.registerCallback(statusCallback)
-                client.load(MediaLoadRequestData.Builder().setMediaInfo(b.build()).setAutoplay(true).build())
-                    .setResultCallback { r ->
-                        main.post {
-                            if (r.status.isSuccess) { playing = true; message = null }
-                            else message = "The TV couldn't play this video (code ${r.status.statusCode}). Try mirroring the screen."
-                        }
-                    }
+                lastMedia = media; lastFmp4 = fmp4; triedDirect = false; lastTvError = null
+                sendToTv(s, url, media, fmp4)
             }
         }
     }
