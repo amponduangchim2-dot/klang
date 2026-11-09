@@ -1,0 +1,204 @@
+package app.klang.cast
+
+import android.content.Context
+import android.net.wifi.WifiManager
+import android.os.Handler
+import android.os.Looper
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.mediarouter.media.MediaRouteSelector
+import androidx.mediarouter.media.MediaRouter
+import com.google.android.gms.cast.CastMediaControlIntent
+import com.google.android.gms.cast.MediaInfo
+import com.google.android.gms.cast.MediaLoadRequestData
+import com.google.android.gms.cast.MediaMetadata
+import com.google.android.gms.cast.framework.CastContext
+import com.google.android.gms.cast.framework.CastOptions as GCastOptions
+import com.google.android.gms.cast.framework.CastSession
+import com.google.android.gms.cast.framework.OptionsProvider
+import com.google.android.gms.cast.framework.SessionManagerListener
+import com.google.android.gms.cast.framework.SessionProvider
+import java.util.concurrent.Executors
+
+/** Google Cast setup: the standard receiver on the TV plays the stream itself. */
+class CastOptions : OptionsProvider {
+    override fun getCastOptions(context: Context): GCastOptions = GCastOptions.Builder()
+        .setReceiverApplicationId(CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID)
+        .setStopReceiverApplicationWhenEndingSession(true)
+        .build()
+    override fun getAdditionalSessionProviders(context: Context): List<SessionProvider>? = null
+}
+
+/** A TV the phone can send a film to. */
+data class Tv(val id: String, val name: String, val kind: Kind, internal val route: MediaRouter.RouteInfo? = null, internal val dlna: Dlna.Renderer? = null) {
+    enum class Kind { GOOGLE_CAST, DLNA }
+}
+
+/** What is being cast: a video address with the headers the site wants. */
+data class CastMedia(val url: String, val title: String, val mime: String, val headers: StreamProxy.Headers)
+
+/**
+ * Finds TVs (Google Cast and DLNA) and sends a video to one of them through [StreamProxy].
+ * State is Compose state, read by the web screen.
+ */
+class Caster(context: Context) {
+    private val app = context.applicationContext
+    private val main = Handler(Looper.getMainLooper())
+    private val io = Executors.newSingleThreadExecutor()
+    private val proxy = StreamProxy(app)
+    private val cast: CastContext? = runCatching { CastContext.getSharedInstance(app) }.getOrNull()   // no Play services: DLNA only
+    private val router = MediaRouter.getInstance(app)
+    private val selector = MediaRouteSelector.Builder()
+        .addControlCategory(CastMediaControlIntent.categoryForCast(CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID))
+        .build()
+    private var wifiLock: WifiManager.WifiLock? = null
+
+    var tvs by mutableStateOf<List<Tv>>(emptyList())
+        private set
+    var scanning by mutableStateOf(false)
+        private set
+    var current by mutableStateOf<Tv?>(null)
+        private set
+    var playing by mutableStateOf(false)
+        private set
+    var message by mutableStateOf<String?>(null)
+        private set
+
+    private var dlnaFound: List<Tv> = emptyList()
+    private var pending: CastMedia? = null
+
+    private val routeCallback = object : MediaRouter.Callback() {
+        override fun onRouteAdded(r: MediaRouter, route: MediaRouter.RouteInfo) = refresh()
+        override fun onRouteRemoved(r: MediaRouter, route: MediaRouter.RouteInfo) = refresh()
+        override fun onRouteChanged(r: MediaRouter, route: MediaRouter.RouteInfo) = refresh()
+    }
+
+    private val sessionListener = object : SessionManagerListener<CastSession> {
+        override fun onSessionStarted(s: CastSession, id: String) { pending?.let { loadOnCast(s, it) } }
+        override fun onSessionResumed(s: CastSession, wasSuspended: Boolean) { pending?.let { loadOnCast(s, it) } }
+        override fun onSessionStartFailed(s: CastSession, error: Int) { message = "Couldn't connect to the TV"; current = null }
+        override fun onSessionEnded(s: CastSession, error: Int) { if (current?.kind == Tv.Kind.GOOGLE_CAST) finish() }
+        override fun onSessionStarting(s: CastSession) {}
+        override fun onSessionEnding(s: CastSession) {}
+        override fun onSessionResuming(s: CastSession, id: String) {}
+        override fun onSessionResumeFailed(s: CastSession, error: Int) {}
+        override fun onSessionSuspended(s: CastSession, reason: Int) {}
+    }
+
+    init {
+        cast?.sessionManager?.addSessionManagerListener(sessionListener, CastSession::class.java)
+    }
+
+    private fun refresh() {
+        val google = router.routes.filter { !it.isDefaultOrBluetooth && it.matchesSelector(selector) && it.isEnabled }
+            .map { Tv("gc:" + it.id, it.name, Tv.Kind.GOOGLE_CAST, route = it) }
+        tvs = google + dlnaFound
+    }
+
+    /** Looks for TVs while the picker is open. */
+    fun startScan() {
+        if (cast != null) router.addCallback(selector, routeCallback, MediaRouter.CALLBACK_FLAG_PERFORM_ACTIVE_SCAN)
+        refresh()
+        scanning = true
+        io.execute {
+            val found = Dlna.discover(app).map { Tv("dlna:" + it.controlUrl, it.name, Tv.Kind.DLNA, dlna = it) }
+            main.post { dlnaFound = found; refresh(); scanning = false }
+        }
+    }
+
+    fun stopScan() {
+        if (cast != null) router.removeCallback(routeCallback)
+        scanning = false
+    }
+
+    /** Sends [media] to [tv]. */
+    fun castTo(tv: Tv, media: CastMedia) {
+        message = null
+        current = tv
+        pending = media
+        holdWifi(true)
+        when (tv.kind) {
+            Tv.Kind.GOOGLE_CAST -> {
+                val s = cast?.sessionManager?.currentCastSession
+                if (s != null && s.isConnected) loadOnCast(s, media) else tv.route?.let { router.selectRoute(it) }
+            }
+            Tv.Kind.DLNA -> io.execute {
+                val url = runCatching { proxy.publish(media.url, media.headers) }.getOrNull()
+                val ok = url != null && Dlna.play(tv.dlna!!, url, media.title, dlnaMime(media.mime))
+                main.post {
+                    playing = ok
+                    if (!ok) { message = "The TV didn't accept this video"; finish() }
+                }
+            }
+        }
+    }
+
+    private fun dlnaMime(m: String) = when {
+        m.contains("mpegurl", true) -> "application/vnd.apple.mpegurl"
+        else -> m
+    }
+
+    private fun loadOnCast(s: CastSession, media: CastMedia) {
+        pending = null
+        io.execute {
+            val url = runCatching { proxy.publish(media.url, media.headers) }.getOrNull()
+            main.post {
+                if (url == null) { message = "Connect the phone to the same Wi-Fi as the TV"; finish(); return@post }
+                val meta = MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE).apply { putString(MediaMetadata.KEY_TITLE, media.title) }
+                val info = MediaInfo.Builder(url)
+                    .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
+                    .setContentType(media.mime)
+                    .setMetadata(meta)
+                    .build()
+                val client = s.remoteMediaClient ?: run { message = "The TV isn't ready"; return@post }
+                client.load(MediaLoadRequestData.Builder().setMediaInfo(info).setAutoplay(true).build())
+                    .setResultCallback { r -> main.post { playing = r.status.isSuccess; if (!r.status.isSuccess) message = "The TV couldn't play this video" } }
+            }
+        }
+    }
+
+    fun togglePlay() {
+        val tv = current ?: return
+        when (tv.kind) {
+            Tv.Kind.GOOGLE_CAST -> cast?.sessionManager?.currentCastSession?.remoteMediaClient?.let { it.togglePlayback(); playing = !playing }
+            Tv.Kind.DLNA -> io.execute { val p = playing; val ok = if (p) Dlna.pause(tv.dlna!!) else Dlna.resume(tv.dlna!!); main.post { if (ok) playing = !p } }
+        }
+    }
+
+    fun stop() {
+        val tv = current ?: return
+        when (tv.kind) {
+            Tv.Kind.GOOGLE_CAST -> cast?.sessionManager?.endCurrentSession(true)
+            Tv.Kind.DLNA -> io.execute { Dlna.stop(tv.dlna!!) }
+        }
+        finish()
+    }
+
+    fun dismissMessage() { message = null }
+
+    private fun finish() {
+        current = null
+        playing = false
+        pending = null
+        holdWifi(false)
+        io.execute { proxy.stop() }
+    }
+
+    private fun holdWifi(on: Boolean) {
+        if (on) {
+            if (wifiLock == null) {
+                val wm = app.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                @Suppress("DEPRECATION")
+                wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "klang-cast").apply { setReferenceCounted(false); acquire() }
+            }
+        } else { runCatching { wifiLock?.release() }; wifiLock = null }
+    }
+
+    fun release() {
+        stopScan()
+        cast?.sessionManager?.removeSessionManagerListener(sessionListener, CastSession::class.java)
+        if (current != null) stop()
+        io.shutdown()
+    }
+}

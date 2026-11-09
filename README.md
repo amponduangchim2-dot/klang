@@ -16,6 +16,9 @@ round OP-1 style keys.
 - Library: favorites, most played, history, saved lists, bookmarks
 - Web browser for films and sites with ad blocking (EasyList, EasyList Thailand, Steven Black's hosts):
   ad servers and trackers blocked, ad boxes hidden, pop-ups and unasked redirects stopped, full-screen video
+- Cast films from the web screen to a TV: Google Cast (Chromecast, Google TV) and DLNA (Samsung, LG, Sony…),
+  through a relay on the phone that keeps the site's headers and adds CORS
+- Video screen: up to 4K (the best the phone decodes smoothly), real-time sharpening (contrast adaptive sharpening on the GPU)
 - Synced lyrics from LRCLIB
 - Skins, share card (square / story), sleep timer, fade between songs, big controls
 - Android Auto (browse, voice, search of the phone and YouTube) with OP-1 screen covers, the clip's picture for
@@ -47,6 +50,8 @@ because it uses NewPipe Extractor (GPL-3.0).
 Third-party parts:
 
 - NewPipe Extractor — GPL-3.0
+- Google Cast SDK (play-services-cast-framework) — Google APIs Terms of Service; not GPL-compatible, so builds
+  that include it are for personal use only
 - AndroidX Media3 / ExoPlayer, Jetpack Compose, Coil — Apache-2.0
 - Klang Sans font: Outfit (© The Outfit Project Authors) + IBM Plex Sans Thai (© IBM Corp.),
   merged; SIL Open Font License 1.1 (texts in `app/src/main/assets/licenses/`)

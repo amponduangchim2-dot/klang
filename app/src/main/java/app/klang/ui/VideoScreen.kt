@@ -126,6 +126,11 @@ fun VideoScreen(item: YtItem, fullscreen: Boolean, setFullscreen: (Boolean) -> U
             }
     }
 
+    val prefs = remember { context.getSharedPreferences("klang", android.content.Context.MODE_PRIVATE) }
+    var enhance by remember { mutableStateOf(prefs.getBoolean("videoSharpenOn", false)) }
+    var sharpen by remember { mutableFloatStateOf(prefs.getFloat("videoSharpen", 0.5f)) }
+    val sharpenNow = remember { floatArrayOf(prefs.getFloat("videoSharpen", 0.5f)) }   // read by the shader every frame
+    val screenShort = remember { context.resources.displayMetrics.let { minOf(it.widthPixels, it.heightPixels) } }
     var plan by remember(item.url) { mutableStateOf<VideoPlan?>(null) }
     var error by remember(item.url) { mutableStateOf<String?>(null) }
     var chosen by remember(item.url) { mutableIntStateOf(-1) }   // height; 0 = auto (live)
@@ -179,21 +184,28 @@ fun VideoScreen(item: YtItem, fullscreen: Boolean, setFullscreen: (Boolean) -> U
             chosen = when {
                 p.live -> 0
                 p.qualities.isEmpty() -> -2      // only the single-file fallback
-                else -> (p.qualities.firstOrNull { it.height <= 1080 } ?: p.qualities.last()).height
+                // the sharpest picture this phone decodes smoothly, up to 4K
+                else -> (p.qualities.firstOrNull { it.height <= app.klang.video.Decoders.maxHeight(it.codec) } ?: p.qualities.last()).height
             }
         }.onFailure { error = it.message ?: "Can't open this video" }
     }
 
     // ---- (re)load the source when the quality changes, keeping the position
-    LaunchedEffect(plan, chosen) {
+    LaunchedEffect(plan, chosen, enhance) {
         val p = plan ?: return@LaunchedEffect
         if (chosen == -1) return@LaunchedEffect
         error = null
+        // sharpen: scale small pictures up to the screen first, then sharpen at that size
+        val effects = if (!enhance) emptyList() else buildList<androidx.media3.common.Effect> {
+            if (chosen in 1 until screenShort) add(androidx.media3.effect.Presentation.createForHeight(minOf(screenShort, 2160)))
+            add(app.klang.video.SharpenEffect { sharpenNow[0] })
+        }
+        runCatching { player.setVideoEffects(effects) }
         if (p.live) {
             val params = player.trackSelectionParameters.buildUpon()
             if (chosen > 0) params.setMaxVideoSize(Int.MAX_VALUE, chosen) else params.clearVideoSizeConstraints()
             player.trackSelectionParameters = params.build()
-            if (player.currentMediaItem == null) {
+            run {   // (re)load: also needed when the sharpen filter is switched
                 val hls = p.hlsUrl ?: return@LaunchedEffect
                 player.setMediaSource(HlsMediaSource.Factory(http(YouTube.BROWSER_UA)).createMediaSource(MediaItem.fromUri(hls)))
                 player.prepare()
@@ -377,6 +389,27 @@ fun VideoScreen(item: YtItem, fullscreen: Boolean, setFullscreen: (Boolean) -> U
                                 { i -> chosen = heights[i] }
                             )
                         }
+                    }
+                }
+            }
+
+            // ---- sharpen, in real time
+            Tile(Modifier.fillMaxWidth(), padding = 6.dp) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextKey(if (enhance) "sharpen: on" else "sharpen: off", {
+                        enhance = !enhance
+                        prefs.edit().putBoolean("videoSharpenOn", enhance).apply()
+                    }, Modifier.height(36.dp).width(104.dp), active = enhance)
+                    if (enhance) {
+                        Box(Modifier.weight(1f)) {
+                            TuningScale(sharpen, 10 * 60_000L, 0, 0, { f ->
+                                sharpen = f; sharpenNow[0] = f
+                                prefs.edit().putFloat("videoSharpen", f).apply()
+                            })
+                        }
+                        Text("${(sharpen * 100).toInt()}%", style = K.value, modifier = Modifier.width(40.dp))
+                    } else {
+                        Text("brings out edges and texture", style = K.label, modifier = Modifier.weight(1f))
                     }
                 }
             }

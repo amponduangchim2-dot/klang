@@ -27,6 +27,9 @@ import java.util.concurrent.Executors
 /** A saved or recently visited page. */
 data class WebPage(val title: String, val url: String)
 
+/** A video stream found on the page, which can be sent to a TV. */
+data class WebMedia(val url: String, val mime: String, val referer: String?)
+
 /**
  * The browser behind the web screen. Lives as long as the activity, so a film keeps its place
  * when you look at another screen and come back.
@@ -59,6 +62,9 @@ class WebHolder(private val activity: Activity) {
         private set
     /** A video in full screen (the page's own full-screen button). */
     var fullView by mutableStateOf<View?>(null)
+        private set
+    /** Video streams seen on this page, best first (HLS playlists, then files). */
+    var media by mutableStateOf<List<WebMedia>>(emptyList())
         private set
     private var fullCallback: WebChromeClient.CustomViewCallback? = null
 
@@ -172,7 +178,11 @@ class WebHolder(private val activity: Activity) {
         view.onPause()
     }
     fun resume() { view.onResume() }
-    fun destroy() { io.shutdownNow(); runCatching { view.destroy() } }
+    fun destroy() {
+        if (casterMade) runCatching { caster.release() }
+        io.shutdownNow(); runCatching { view.destroy() }
+    }
+    fun useCaster(): app.klang.cast.Caster { casterMade = true; return caster }
 
     // ------------------------------------------------------------------ pages lists
 
@@ -204,10 +214,72 @@ class WebHolder(private val activity: Activity) {
 
     private fun countBlocked() = main.post { blockedCount++ }
 
+    private val mediaExt = Regex("\\.(m3u8|mp4|mpd|webm|mkv|mov)($|[?#])", RegexOption.IGNORE_CASE)
+
+    private fun mimeOf(u: String): String? {
+        val path = u.substringBefore('?').lowercase()
+        return when {
+            path.endsWith(".m3u8") || u.contains(".m3u8", true) -> "application/x-mpegURL"
+            path.endsWith(".mpd") -> "application/dash+xml"
+            path.endsWith(".mp4") || path.endsWith(".m4v") || path.endsWith(".mov") -> "video/mp4"
+            path.endsWith(".webm") -> "video/webm"
+            path.endsWith(".mkv") -> "video/x-matroska"
+            else -> null
+        }
+    }
+
+    /** Notes a video address (from the page's requests or its video tags). */
+    private fun noteMedia(u: String, referer: String?) {
+        if (!u.startsWith("http")) return
+        val mime = mimeOf(u) ?: return
+        // HLS segments and sub-playlists come after the master playlist: keep the first of each kind
+        main.post {
+            if (media.any { it.url == u }) return@post
+            if (mime == "application/x-mpegURL" && media.count { it.mime == mime } >= 3) return@post
+            val m = WebMedia(u, mime, referer)
+            media = (media + m).sortedBy { if (it.mime == "application/x-mpegURL") 0 else if (it.mime == "video/mp4") 1 else 2 }.take(8)
+        }
+    }
+
+    /** Sends films to a TV. Made when first needed. */
+    val caster: app.klang.cast.Caster by lazy { app.klang.cast.Caster(activity) }
+    private var casterMade = false
+    val hasCaster: Boolean get() = casterMade
+
+    /** Looks again for videos, e.g. after the film has started. */
+    fun rescan() { scanVideoTags(view) }
+
+    /** Looks for <video> tags with a real address (not blob:). */
+    private fun scanVideoTags(v: WebView) {
+        val js = "(function(){var o=[];document.querySelectorAll('video,video source').forEach(function(e){var s=e.currentSrc||e.src;if(s&&s.indexOf('http')==0)o.push(s)});return JSON.stringify(o)})()"
+        runCatching {
+            v.evaluateJavascript(js) { res ->
+                runCatching {
+                    val arr = JSONArray(JSONArray("[$res]").getString(0))
+                    for (i in 0 until arr.length()) noteMedia(arr.getString(i), url)
+                }
+            }
+        }
+    }
+
+    /** What to send to the TV, with the headers the site expects. */
+    fun castMedia(): app.klang.cast.CastMedia? {
+        val m = media.firstOrNull() ?: return null
+        val cookie = runCatching { CookieManager.getInstance().getCookie(m.url) }.getOrNull()
+        return app.klang.cast.CastMedia(
+            m.url, title.ifBlank { "Klang Audio" }, m.mime,
+            app.klang.cast.StreamProxy.Headers(m.referer ?: url, view.settings.userAgentString, cookie)
+        )
+    }
+
     // ------------------------------------------------------------------ WebView callbacks
 
     private inner class Client : WebViewClient() {
         override fun shouldInterceptRequest(v: WebView, req: WebResourceRequest): WebResourceResponse? {
+            val u = req.url.toString()
+            if (!req.isForMainFrame && mediaExt.containsMatchIn(u) && !(filtering && AdBlocker.isBlocked(req.url.host))) {
+                noteMedia(u, req.requestHeaders["Referer"] ?: req.requestHeaders["referer"])
+            }
             if (!filtering || req.isForMainFrame) return null
             val host = req.url.host ?: return null
             if (AdBlocker.siteOf(host) == AdBlocker.siteOf(pageHost)) return null
@@ -239,6 +311,7 @@ class WebHolder(private val activity: Activity) {
             if (u == "about:blank") return
             val host = Uri.parse(u).host
             if (AdBlocker.siteOf(host) != AdBlocker.siteOf(pageHost)) blockedCount = 0
+            media = emptyList()
             pageHost = host
             filtering = adblockOn && AdBlocker.siteOf(host) !in allowedSites
             url = u
@@ -250,6 +323,7 @@ class WebHolder(private val activity: Activity) {
         override fun onPageFinished(v: WebView, u: String) {
             if (u == "about:blank") return
             injectCss(v, u)
+            scanVideoTags(v)
             title = v.title.orEmpty()
             url = u
             sync(v)
