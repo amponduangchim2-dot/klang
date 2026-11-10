@@ -266,6 +266,14 @@ class Caster private constructor(context: Context) {
         val parts = mutableListOf<String>()
         lastTvError?.let { parts += "tv error $it" }
         parts += "tv asked the phone ${proxy.tvRequests}×"
+        lastMedia?.let { m ->
+            val kind = when {
+                m.manifest != null -> "dash"
+                m.mime.contains("mpegurl", true) -> "hls"
+                else -> m.mime.substringAfter('/')
+            }
+            parts += kind + " from " + (runCatching { java.net.URL(m.url).host }.getOrNull() ?: "?")
+        }
         proxy.lastProblem?.let { parts += it }
         return parts.joinToString(" · ")
     }

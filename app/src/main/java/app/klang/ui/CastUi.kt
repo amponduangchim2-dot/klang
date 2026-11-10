@@ -62,7 +62,7 @@ fun CastRemote(c: Caster, modifier: Modifier = Modifier, live: Boolean = false) 
                 )
             }
             Spacer(Modifier.height(4.dp))
-            Text(msg ?: c.title, style = K.lcdText.copy(color = if (msg != null) K.lcdDim else Color.White, fontSize = 13.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(msg ?: c.title, style = K.lcdText.copy(color = if (msg != null) K.lcdDim else Color.White, fontSize = 13.sp), maxLines = if (msg != null) 6 else 2, overflow = TextOverflow.Ellipsis)
         }
         if (!live) {
             Spacer(Modifier.height(4.dp))

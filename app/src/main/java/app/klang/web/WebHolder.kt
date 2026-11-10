@@ -178,6 +178,7 @@ class WebHolder(private val activity: Activity) {
             if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)) {
                 runCatching { androidx.webkit.WebViewCompat.addDocumentStartJavaScript(this, RESUME_JS, setOf("*")) }
                 runCatching { androidx.webkit.WebViewCompat.addDocumentStartJavaScript(this, PIP_JS, setOf("*")) }
+                runCatching { androidx.webkit.WebViewCompat.addDocumentStartJavaScript(this, SKIP_JS, setOf("*")) }
             }
         }
 
@@ -306,6 +307,59 @@ class WebHolder(private val activity: Activity) {
  });
  window.__klangPip = function(on) { if (on) ask(function(){ go(); }); else off(); };
 })();"""
+        /**
+         * Video ads inside a site's own player (pre-rolls the block lists can't see, as they come from
+         * the site): presses "skip ad" as soon as it shows, and runs a short ad video to its end
+         * muted at 16×, so the player moves on to the film. The film gets its sound back.
+         */
+        const val SKIP_JS = """(function(){
+ if (window.__klangSkip) return; window.__klangSkip = 1;
+ var SKIP = /^\s*(ข้าม\s*โฆษณา|ข้าม|skip(\s*ads?)?|skip\s*>+|ข้ามโฆษณา\s*>+|>>\s*skip)\s*[>»›]*\s*$/i;
+ var BAD = /สมัคร|register|login|เข้าสู่ระบบ|ฝาก|ถอน/i;
+ var ADSRC = /(^|[\/._?=&-])(vast|vpaid|preroll|pre-roll|ads?|adserver|advert|ufa\w*)([\/._?=&-]|$)/i;
+ function shown(el) { var r = el.getBoundingClientRect(); if (r.width < 8 || r.height < 8) return false; var s = getComputedStyle(el); return s.visibility !== 'hidden' && s.display !== 'none' && +s.opacity > 0.05; }
+ function adLike(v) {
+  var src = (v.currentSrc || v.src || '');
+  if (src && src.indexOf('blob:') !== 0 && ADSRC.test(src)) return true;
+  for (var p = v, i = 0; p && i < 6; p = p.parentElement, i++) {
+   var t = ((p.id || '') + ' ' + (typeof p.className === 'string' ? p.className : '')).toLowerCase();
+   if (/(^|[\s_-])(ads?|vast|preroll|advert|ima-ad|jw-flag-ads)([\s_-]|$)/.test(t)) return true;
+  }
+  return false;
+ }
+ function skipButtons() {
+  var out = [], els = document.querySelectorAll('button,a,div,span');
+  for (var i = 0; i < els.length && i < 4000; i++) {
+   var e = els[i], t = e.textContent || '';
+   if (t.length > 24 || !SKIP.test(t) || BAD.test(t)) continue;
+   if (e.children.length > 2) continue;
+   if (shown(e)) out.push(e);
+  }
+  return out;
+ }
+ function tick() {
+  var btns = skipButtons();
+  btns.forEach(function(b){
+   if (b.disabled || b.getAttribute('aria-disabled') === 'true') return;
+   try { b.click(); } catch (e) {}
+  });
+  [].slice.call(document.querySelectorAll('video')).forEach(function(v){
+   var d = v.duration, src = v.currentSrc || v.src || '';
+   // the same player goes on to the film: give it its sound and speed back
+   if (v.dataset.klangAd && v.dataset.klangAd !== src) {
+    try { if (v.dataset.klangMuted) v.muted = false; v.playbackRate = 1; } catch (e) {}
+    delete v.dataset.klangAd; delete v.dataset.klangMuted;
+   }
+   if (!(d > 0) || !isFinite(d) || d > 120 || v.paused || v.ended) return;
+   if (!(btns.length || adLike(v))) return;
+   if (!v.dataset.klangAd) { v.dataset.klangAd = src || '-'; if (!v.muted) v.dataset.klangMuted = '1'; }
+   try { v.muted = true; v.playbackRate = 16; } catch (e) {}
+   try { if (d - v.currentTime > 0.3) v.currentTime = d - 0.1; } catch (e) {}
+  });
+ }
+ setInterval(tick, 500);
+})();"""
+
         const val RESUME_JS = """(function(){
  if (window.__klangPos) return; window.__klangPos = 1;
  var K = 'klang-pos:' + location.href.split('#')[0];
@@ -447,15 +501,20 @@ class WebHolder(private val activity: Activity) {
     }
 
     /** Notes a video address (from the page's requests or its video tags). */
+    /** Video addresses that are ads (pre-rolls), never sent to the TV. */
+    private val adMedia = Regex("(^|[/._?=&-])(vast|vpaid|preroll|pre-roll|ads?|adserver|advert|ufa\\w*)([/._?=&-]|$)", RegexOption.IGNORE_CASE)
+
     private fun noteMedia(u: String, referer: String?) {
         if (!u.startsWith("http")) return
+        if (adMedia.containsMatchIn(u.substringAfter("://").substringAfter('/'))) return
         val mime = mimeOf(u) ?: return
         // HLS segments and sub-playlists come after the master playlist: keep the first of each kind
         main.post {
             if (media.any { it.url == u }) return@post
             if (mime == "application/x-mpegURL" && media.count { it.mime == mime } >= 3) return@post
             val m = WebMedia(u, mime, referer)
-            media = (media + m).sortedBy { if (it.mime == "application/x-mpegURL") 0 else if (it.mime == "video/mp4") 1 else 2 }.take(8)
+            // newest first within each kind: the film starts after any pre-roll ad
+            media = (listOf(m) + media).sortedBy { if (it.mime == "application/x-mpegURL") 0 else if (it.mime == "video/mp4") 1 else 2 }.take(8)
         }
     }
 
@@ -540,7 +599,7 @@ class WebHolder(private val activity: Activity) {
 
     /** Looks for <video> tags with a real address (not blob:). */
     private fun scanVideoTags(v: WebView) {
-        val js = "(function(){var o=[];document.querySelectorAll('video,video source').forEach(function(e){var s=e.currentSrc||e.src;if(s&&s.indexOf('http')==0)o.push(s)});return JSON.stringify(o)})()"
+        val js = "(function(){var o=[];document.querySelectorAll('video,video source').forEach(function(e){var p=e.closest('video');if(p&&p.dataset.klangAd)return;var s=e.currentSrc||e.src;if(s&&s.indexOf('http')==0)o.push(s)});return JSON.stringify(o)})()"
         runCatching {
             v.evaluateJavascript(js) { res ->
                 runCatching {
