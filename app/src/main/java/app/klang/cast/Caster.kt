@@ -199,6 +199,7 @@ class Caster private constructor(context: Context) {
         positionMs = media.startMs; durationMs = 0L
         pending = media
         holdWifi(true)
+        CastKeepAlive.start(app, media.title, tv.name)
         startPolling()
         when (tv.kind) {
             Tv.Kind.GOOGLE_CAST -> {
@@ -260,6 +261,14 @@ class Caster private constructor(context: Context) {
     private var triedDirect = false
     /** 0 = through the phone, 1 = through the phone in simple mode, 2 = the site's own address. */
     private var stage = 0
+    /** Every load gets a number; answers to older loads (replaced by a retry) are ignored. */
+    private var loadGen = 0
+    /** Retries after the film had been playing (a dropped piece mid-film), before giving up. */
+    private var midRetries = 0
+    /** The TV played at least a few seconds of this film. */
+    private var played = false
+    /** The first thing that went wrong, kept for the message after the retries. */
+    private var firstError: String? = null
     private var lastTvError: Int? = null
 
     private fun diagnosis(): String {
@@ -288,13 +297,23 @@ class Caster private constructor(context: Context) {
             playing = st.playerState == com.google.android.gms.cast.MediaStatus.PLAYER_STATE_PLAYING ||
                 st.playerState == com.google.android.gms.cast.MediaStatus.PLAYER_STATE_BUFFERING
             if (playing) message = null
+            if (st.playerState == com.google.android.gms.cast.MediaStatus.PLAYER_STATE_PLAYING && st.streamPosition > 5000) played = true
             if (st.playerState == com.google.android.gms.cast.MediaStatus.PLAYER_STATE_IDLE &&
                 st.idleReason == com.google.android.gms.cast.MediaStatus.IDLE_REASON_ERROR) {
                 val m = lastMedia
                 val s = cast?.sessionManager?.currentCastSession
-                val at = st.streamPosition.coerceAtLeast(0L)
+                val at = st.streamPosition.coerceAtLeast(0L).let { if (it > 0) it else positionMs }
                 val fb = m?.fallback
-                if (fb != null && s != null) {
+                if (firstError == null) firstError = diagnosis()
+                if (played && midRetries < 4 && m != null && s != null && lastUrl != null) {
+                    // it was playing: a piece went missing. Go on from the same moment, same way.
+                    midRetries++
+                    lastTvError = null
+                    message = "the tv lost the stream, picking it up again…"
+                    sendToTv(s, lastUrl!!, m, lastFmp4, at)
+                } else if (played) {
+                    message = "The TV keeps losing this stream (${firstError}). Try another server on the site, or a lower tv quality."
+                } else if (fb != null && s != null) {
                     message = "trying a simpler version of the video…"
                     lastMedia = fb
                     loadOnCast(s, fb.copy(startMs = at))
@@ -311,7 +330,9 @@ class Caster private constructor(context: Context) {
                     message = "trying the direct link…"
                     sendToTv(s, m.url, m, lastFmp4, at)
                 } else {
-                    message = "The TV could not play this stream (${diagnosis()}). Try another server on the site, or mirror the screen."
+                    val first = firstError
+                    val now = diagnosis()
+                    message = "The TV could not play this stream (" + (if (first != null && first != now) "first: $first · last: $now" else now) + "). Try another server on the site, or mirror the screen."
                 }
             }
         }
@@ -349,11 +370,20 @@ class Caster private constructor(context: Context) {
         val client = s.remoteMediaClient ?: run { message = "The TV isn't ready. Try again."; return }
         client.unregisterCallback(statusCallback)
         client.registerCallback(statusCallback)
+        val gen = ++loadGen
         client.load(MediaLoadRequestData.Builder().setMediaInfo(b.build()).setAutoplay(true).setCurrentTime(startMs).build())
             .setResultCallback { r ->
                 main.post {
-                    if (r.status.isSuccess) playing = true
-                    else message = "The TV couldn't open this video (code ${r.status.statusCode} · ${diagnosis()}). Try mirroring the screen."
+                    val code = r.status.statusCode
+                    when {
+                        gen != loadGen -> {}   // an older try, replaced by a newer one
+                        r.status.isSuccess -> playing = true
+                        // canceled / replaced: a newer load or the TV's own error handling took over
+                        code == com.google.android.gms.cast.CastStatusCodes.CANCELED || code == com.google.android.gms.cast.CastStatusCodes.REPLACED -> {}
+                        // the TV's player reports the real reason through the status callback, with retries
+                        code == com.google.android.gms.cast.CastStatusCodes.FAILED && message?.startsWith("trying") == true -> {}
+                        else -> message = "The TV couldn't open this video (code $code · ${diagnosis()}). Try mirroring the screen."
+                    }
                 }
             }
     }
@@ -384,6 +414,7 @@ class Caster private constructor(context: Context) {
             val fmp4 = hls && hlsIsFmp4(media)
             main.post {
                 lastMedia = media; lastFmp4 = fmp4; triedDirect = false; lastTvError = null; stage = 0
+                midRetries = 0; played = false; firstError = null
                 sendToTv(s, url, media, fmp4, media.startMs)
             }
         }
@@ -410,12 +441,15 @@ class Caster private constructor(context: Context) {
 
     private fun finish() {
         main.removeCallbacks(poll)
+        CastKeepAlive.stop(app)
         current = null
         playing = false
         pending = null
         holdWifi(false)
         io.execute { proxy.stop() }
     }
+
+    private var wakeLock: android.os.PowerManager.WakeLock? = null
 
     private fun holdWifi(on: Boolean) {
         if (on) {
@@ -424,7 +458,15 @@ class Caster private constructor(context: Context) {
                 @Suppress("DEPRECATION")
                 wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "klang-cast").apply { setReferenceCounted(false); acquire() }
             }
-        } else { runCatching { wifiLock?.release() }; wifiLock = null }
+            if (wakeLock == null) {
+                val pm = app.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+                // the relay must keep answering the TV with the phone's screen off
+                wakeLock = pm.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "klang:cast").apply { setReferenceCounted(false); acquire(4 * 60 * 60 * 1000L) }
+            }
+        } else {
+            runCatching { wifiLock?.release() }; wifiLock = null
+            runCatching { if (wakeLock?.isHeld == true) wakeLock?.release() }; wakeLock = null
+        }
     }
 
     fun release() {

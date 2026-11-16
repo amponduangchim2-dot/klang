@@ -53,7 +53,7 @@ class StreamProxy(private val context: Context) {
         override fun removeEldestEntry(e: MutableMap.MutableEntry<String, Pair<ByteArray, String>>?) = size > 10
     }
     private val inFlight = java.util.Collections.synchronizedSet(HashSet<String>())
-    private val ahead = Executors.newSingleThreadExecutor()
+    private val ahead = Executors.newFixedThreadPool(2)
     @Volatile var lastProblem: String? = null
 
     /** Starts (or re-targets) the relay and returns the TV-facing address of [url]. */
@@ -283,7 +283,21 @@ class StreamProxy(private val context: Context) {
     }
 
     /** One piece of the film, cleaned (see [tsStart]). Null when the site refuses. */
-    private fun fetchPiece(target: String): Pair<ByteArray, String>? = runCatching {
+    /** A piece of the film, tried up to 3 times: sites drop the odd request, and one miss stops the TV. */
+    private fun fetchPiece(target: String): Pair<ByteArray, String>? {
+        repeat(3) { n ->
+            val r = fetchOnce(target)
+            if (r != null || refused.get() == true) return r
+            Thread.sleep(400L * (n + 1))
+        }
+        return null
+    }
+
+    /** Set when the site answered with a 4xx: trying again won't help. */
+    private val refused = ThreadLocal<Boolean>()
+
+    private fun fetchOnce(target: String): Pair<ByteArray, String>? = runCatching {
+        refused.set(false)
         val conn = URL(target).openConnection() as HttpURLConnection
         conn.instanceFollowRedirects = true
         conn.connectTimeout = 15_000; conn.readTimeout = 30_000
@@ -291,7 +305,8 @@ class StreamProxy(private val context: Context) {
         headers.userAgent?.let { conn.setRequestProperty("User-Agent", it) }
         headers.cookie?.let { conn.setRequestProperty("Cookie", it) }
         try {
-            if (conn.responseCode != 200) { lastProblem = "site said ${conn.responseCode}"; return null }
+            val rc = conn.responseCode
+            if (rc != 200) { lastProblem = "site said $rc"; refused.set(rc in 400..499); return null }
             val type = conn.contentType.orEmpty()
             val bytes = conn.inputStream.use { it.readBytes() }
             val start = tsStart(bytes)
@@ -305,7 +320,7 @@ class StreamProxy(private val context: Context) {
         val i = order.indexOf(target)
         if (i < 0) return
         val tok = token
-        for (k in 1..3) {
+        for (k in 1..5) {
             val next = order.getOrNull(i + k) ?: break
             if (synchronized(cache) { cache.containsKey(next) } || !inFlight.add(next)) continue
             ahead.execute {
@@ -372,6 +387,13 @@ class StreamProxy(private val context: Context) {
             i++
         }
         if (variants.size <= 1) return text
+        // a TV can't show a sound-only variant, and many can't decode HEVC: keep plain H.264 pictures when there are any
+        fun codecs(inf: String) = Regex("CODECS=\"([^\"]*)\"", RegexOption.IGNORE_CASE).find(inf)?.groupValues?.get(1)?.lowercase()
+        fun hasPicture(inf: String) = resRe.containsMatchIn(inf) || codecs(inf)?.let { c -> listOf("avc", "hvc", "hev", "vp0", "vp9", "av01").any { it in c } } ?: true
+        fun isAvc(inf: String) = codecs(inf)?.contains("avc") ?: true
+        val pictures = variants.filter { hasPicture(it.first) }.ifEmpty { variants }
+        variants.clear(); variants += pictures.filter { isAvc(it.first) }.ifEmpty { pictures }
+        if (variants.size == 1) return (head.filter { it.isNotBlank() } + variants[0].first + variants[0].second).joinToString("\n") + "\n"
         fun height(inf: String) = resRe.find(inf)?.groupValues?.get(2)?.toIntOrNull()
         fun bw(inf: String) = bwRe.find(" $inf")?.groupValues?.get(1)?.toLongOrNull() ?: 0L
         val capBw = when { maxHeight <= 480 -> 1_600_000L; maxHeight <= 720 -> 3_500_000L; else -> 8_000_000L }

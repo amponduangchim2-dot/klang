@@ -12,8 +12,8 @@ android {
         applicationId = "app.klang.player"
         minSdk = 26
         targetSdk = 35
-        versionCode = 34
-        versionName = "1.7.4"
+        versionCode = 35
+        versionName = "1.7.5"
     }
 
     // The release key never lives in the repository. CI writes it from GitHub Secrets
@@ -84,6 +84,6 @@ dependencies {
     implementation("androidx.mediarouter:mediarouter:1.7.0")
 
     // YouTube search and stream extraction (GPL-3.0), the same library Droidamp uses
-    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.27.1")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.2")
 }

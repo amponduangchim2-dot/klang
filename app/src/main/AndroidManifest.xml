@@ -63,6 +63,11 @@
         </provider>
 
         <service
+            android:name=".cast.CastKeepAlive"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
+        <service
             android:name=".playback.PlaybackService"
             android:exported="true"
             android:foregroundServiceType="mediaPlayback">

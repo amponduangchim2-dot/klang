@@ -446,9 +446,9 @@ object YouTube {
         val client = Uri.parse(streamUrl).getQueryParameter("c").orEmpty().uppercase()
         return runCatching {
             when {
-                client.startsWith("IOS") -> YoutubeParsingHelper.getIosUserAgent(null)
-                client.startsWith("VISIONOS") -> YoutubeParsingHelper.getVisionOsUserAgent(null)
-                client.startsWith("ANDROID") -> YoutubeParsingHelper.getAndroidUserAgent(null)
+                // extractor 0.27 fetches streams as the visionOS client only
+                client.startsWith("VISIONOS") || client.startsWith("IOS") || client.startsWith("ANDROID") ->
+                    YoutubeParsingHelper.getVisionOsUserAgent(null)
                 else -> BROWSER_UA
             }
         }.getOrDefault(BROWSER_UA)
