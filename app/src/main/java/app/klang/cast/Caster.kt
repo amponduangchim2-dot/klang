@@ -339,6 +339,22 @@ class Caster private constructor(context: Context) {
     }
 
     /** 480 → 720 → 1080 → all: lower is smoother on TVs that stall. Reloads at the same moment. */
+    /** Everything about the last cast, as text the user can paste to the developer. */
+    fun report(): String {
+        val tv = current
+        val m = lastMedia
+        val v = runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull()
+        return buildString {
+            appendLine("klang $v · android ${android.os.Build.VERSION.RELEASE} · ${android.os.Build.MODEL}")
+            appendLine("tv: ${tv?.name ?: "-"} (${tv?.kind ?: "-"}) · quality ${if (tvQuality == 0) "max" else "${tvQuality}p"} · stage $stage · mid-retries $midRetries · played $played")
+            if (m != null) appendLine("media: ${m.mime} · " + runCatching { java.net.URL(m.url).host }.getOrDefault("?") + (if (m.headers.referer != null) " · referer " + runCatching { java.net.URL(m.headers.referer).host }.getOrDefault("?") else "") + (if (m.headers.cookie != null) " · cookie" else ""))
+            appendLine("fmp4 $lastFmp4 · first: ${firstError ?: "-"} · now: ${diagnosis()}")
+            message?.let { appendLine("message: $it") }
+            appendLine("---")
+            append(proxy.logText())
+        }
+    }
+
     /** The TV quality key only applies to streams the relay thins out (HLS on Google Cast). */
     val canChangeQuality: Boolean get() = current?.kind == Tv.Kind.GOOGLE_CAST && lastMedia?.manifest == null && quality
 

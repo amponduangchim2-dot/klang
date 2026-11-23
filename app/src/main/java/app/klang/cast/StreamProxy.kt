@@ -56,6 +56,50 @@ class StreamProxy(private val context: Context) {
     private val ahead = Executors.newFixedThreadPool(2)
     @Volatile var lastProblem: String? = null
 
+    // ---- cast log: what the TV asked for and what it got, for the "copy report" key
+    private val logLines = java.util.ArrayDeque<String>()
+    @Volatile private var logStart = System.currentTimeMillis()
+
+    fun log(line: String) {
+        val t = (System.currentTimeMillis() - logStart) / 100 / 10.0
+        synchronized(logLines) {
+            if (logLines.size >= 80) logLines.removeFirst()
+            logLines.addLast("$t s  $line")
+        }
+    }
+
+    fun logText(): String = synchronized(logLines) { logLines.joinToString("\n") }
+
+    /** host + the end of the path: enough to tell pieces apart, short enough to read. */
+    private fun short(u: String): String = runCatching {
+        val x = URL(u)
+        val p = x.path.orEmpty()
+        x.host + (if (p.length > 28) "/…" + p.takeLast(26) else p) + (if (x.query != null) "?…" else "")
+    }.getOrDefault(u.take(40))
+
+    private fun kb(n: Int) = if (n >= 1024 * 1024) "%.1fMB".format(n / 1048576.0) else "${n / 1024}KB"
+
+    /** One-line summary of a playlist, so the report shows what the site sent. */
+    private fun describe(text: String, isMaster: Boolean): String {
+        val lines = text.lines()
+        return if (isMaster) {
+            val v = lines.filter { it.startsWith("#EXT-X-STREAM-INF") }
+            "master: ${v.size} variants [" + v.joinToString(" | ") { inf ->
+                listOfNotNull(resRe.find(inf)?.value?.removePrefix("RESOLUTION="),
+                    Regex("CODECS=\"([^\"]*)\"").find(inf)?.groupValues?.get(1),
+                    bwRe.find(" $inf")?.groupValues?.get(1)?.toLongOrNull()?.let { "${it / 1000}k" }).joinToString(" ")
+            } + "]" + (if (lines.any { it.startsWith("#EXT-X-MEDIA") }) " +media" else "")
+        } else {
+            val segs = lines.filter { it.isNotBlank() && !it.startsWith("#") }
+            val ext = segs.firstOrNull()?.substringBefore('?')?.substringAfterLast('/')?.substringAfterLast('.', "none")?.take(6)
+            "playlist: ${segs.size} pieces .$ext" +
+                (lines.firstOrNull { it.startsWith("#EXT-X-TARGETDURATION") }?.let { " td=" + it.substringAfter(':') } ?: "") +
+                (if (lines.any { it.startsWith("#EXT-X-KEY") && !it.contains("METHOD=NONE") }) " KEY" else "") +
+                (if (lines.any { it.startsWith("#EXT-X-MAP") }) " MAP" else "") +
+                (if (lines.any { it.startsWith("#EXT-X-ENDLIST") }) " vod" else " live")
+        }
+    }
+
     /** Starts (or re-targets) the relay and returns the TV-facing address of [url]. */
     @Synchronized
     fun publish(url: String, h: Headers): String? {
@@ -70,6 +114,9 @@ class StreamProxy(private val context: Context) {
         order.clear(); synchronized(cache) { cache.clear() }
         tvRequests = 0
         lastProblem = null
+        synchronized(logLines) { logLines.clear() }
+        logStart = System.currentTimeMillis()
+        log("publish " + short(url))
         ipNow = ip
         headers = h
         hosts.clear()
@@ -153,7 +200,10 @@ class StreamProxy(private val context: Context) {
     private fun acceptLoop(s: ServerSocket) {
         while (!s.isClosed) {
             val c = runCatching { s.accept() }.getOrNull() ?: break
-            pool.execute { runCatching { handle(c) }; runCatching { c.close() } }
+            pool.execute {
+                runCatching { handle(c) }.onFailure { log("! " + it.javaClass.simpleName + " " + (it.message ?: "").take(60)) }
+                runCatching { c.close() }
+            }
         }
     }
 
@@ -188,24 +238,29 @@ class StreamProxy(private val context: Context) {
         val path = parts.getOrNull(1) ?: return
         val reqHeaders = head.drop(1).associate { it.substringBefore(':').trim().lowercase() to it.substringAfter(':').trim() }
 
-        if (!c.inetAddress.isLoopbackAddress && c.inetAddress.hostAddress != ipNow) tvRequests++
-        if (method == "OPTIONS") { status(out, 204, "No Content", cors() + listOf("Content-Length: 0")); return }
+        val fromTv = !c.inetAddress.isLoopbackAddress && c.inetAddress.hostAddress != ipNow
+        if (fromTv) tvRequests++
+        val began = System.currentTimeMillis()
+        fun took() = "${System.currentTimeMillis() - began}ms"
+        if (method == "OPTIONS") { if (fromTv) log("tv OPTIONS"); status(out, 204, "No Content", cors() + listOf("Content-Length: 0")); return }
         val seg = path.trimStart('/').split('/', limit = 2)
-        if (seg.size < 2 || seg[0] != token || token.isEmpty()) { status(out, 403, "Forbidden", listOf("Content-Length: 0")); return }
+        if (seg.size < 2 || seg[0] != token || token.isEmpty()) { if (fromTv) log("tv $method old/unknown address -> 403"); status(out, 403, "Forbidden", listOf("Content-Length: 0")); return }
         doc?.takeIf { seg[1].startsWith("doc.") }?.let { d ->
             status(out, 200, "OK", cors() + listOf("Content-Type: ${d.second}", "Content-Length: ${d.first.size}", "Cache-Control: no-cache"))
             if (method != "HEAD") out.write(d.first)
             out.flush()
             return
         }
-        val target = decode(seg[1].substringBefore('.').substringBefore('?')) ?: run { status(out, 400, "Bad Request", listOf("Content-Length: 0")); return }
+        val target = decode(seg[1].substringBefore('.').substringBefore('?')) ?: run { if (fromTv) log("tv bad address -> 400"); status(out, 400, "Bad Request", listOf("Content-Length: 0")); return }
         val host = runCatching { URL(target).host.lowercase() }.getOrNull()
         if (host == null || host !in hosts || !(target.startsWith("http://") || target.startsWith("https://"))) {
+            if (fromTv) log("tv host not allowed $host -> 403")
             status(out, 403, "Forbidden", listOf("Content-Length: 0")); return
         }
 
         if (!compat && method == "GET" && reqHeaders["range"] == null && order.contains(target)) {
             val piece = synchronized(cache) { cache[target] } ?: fetchPiece(target)
+            if (fromTv) log("tv piece ${short(target)} -> " + (piece?.let { "200 ${kb(it.first.size)} ${it.second} ${took()}" } ?: "FAILED ${lastProblem ?: ""} ${took()}"))
             if (piece != null) {
                 synchronized(cache) { cache[target] = piece }
                 prefetchAfter(target)
@@ -232,6 +287,11 @@ class StreamProxy(private val context: Context) {
             if (isPlaylist && code in 200..299) {
                 val text = conn.inputStream.use { it.readBytes() }.toString(Charsets.UTF_8)
                 val body = rewrite(text, finalUrl).toByteArray()
+                if (fromTv) {
+                    val master = text.contains("#EXT-X-STREAM-INF")
+                    log("tv $method ${short(target)} -> $code ${describe(text, master)} ${took()}")
+                    if (master) log("  sent: " + describe(body.toString(Charsets.UTF_8), true))
+                }
                 status(out, 200, "OK", cors() + listOf("Content-Type: application/vnd.apple.mpegurl", "Content-Length: ${body.size}", "Cache-Control: no-cache"))
                 if (method != "HEAD") out.write(body)
                 out.flush()
@@ -247,6 +307,7 @@ class StreamProxy(private val context: Context) {
                 val start = tsStart(bytes)
                 val body = if (start > 0) bytes.copyOfRange(start, bytes.size) else bytes
                 val type2 = if (start > 0 || looksTs(body)) "video/mp2t" else type
+                if (fromTv) log("tv seg ${short(target)} -> $code ${kb(body.size)} $type2" + (if (start > 0) " (cut $start)" else "") + " ${took()}")
                 status(out, 200, "OK", cors() + listOfNotNull(type2.takeIf { it.isNotEmpty() }?.let { "Content-Type: $it" }, "Content-Length: ${body.size}"))
                 out.write(body); out.flush()
                 return
@@ -257,6 +318,7 @@ class StreamProxy(private val context: Context) {
             conn.getHeaderField("Content-Length")?.let { h += "Content-Length: $it" }
             conn.getHeaderField("Content-Range")?.let { h += "Content-Range: $it" }
             h += "Accept-Ranges: bytes"
+            if (fromTv) log("tv $method ${short(target)}" + (reqHeaders["range"]?.let { " [$it]" } ?: "") + " -> $code $type len=${conn.getHeaderField("Content-Length") ?: "?"} ${took()}")
             status(out, code, if (code == 206) "Partial Content" else "OK", h)
             if (method != "HEAD") {
                 val stream = if (code >= 400) conn.errorStream else conn.inputStream
@@ -306,14 +368,14 @@ class StreamProxy(private val context: Context) {
         headers.cookie?.let { conn.setRequestProperty("Cookie", it) }
         try {
             val rc = conn.responseCode
-            if (rc != 200) { lastProblem = "site said $rc"; refused.set(rc in 400..499); return null }
+            if (rc != 200) { lastProblem = "site said $rc"; log("site $rc for ${short(target)}"); refused.set(rc in 400..499); return null }
             val type = conn.contentType.orEmpty()
             val bytes = conn.inputStream.use { it.readBytes() }
             val start = tsStart(bytes)
             val body = if (start > 0) bytes.copyOfRange(start, bytes.size) else bytes
             body to (if (start > 0 || looksTs(body)) "video/mp2t" else if (isMp4(body)) "video/mp4" else type)
         } finally { conn.disconnect() }
-    }.getOrNull()
+    }.onFailure { log("site ! " + it.javaClass.simpleName + " " + (it.message ?: "").take(50) + " " + short(target)) }.getOrNull()
 
     /** Fetches the next few pieces while the TV plays this one. */
     private fun prefetchAfter(target: String) {

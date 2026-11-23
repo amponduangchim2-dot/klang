@@ -73,6 +73,15 @@ fun CastRemote(c: Caster, modifier: Modifier = Modifier, live: Boolean = false) 
                 onSeek = { f -> if (dur > 0) c.seekTo((f * dur).toLong()) },
             )
         }
+        if (msg != null) {
+            val ctx = LocalContext.current
+            Spacer(Modifier.height(6.dp))
+            TextKey("copy report for the developer", {
+                val cm = ctx.getSystemService(android.content.ClipboardManager::class.java)
+                cm?.setPrimaryClip(android.content.ClipData.newPlainText("klang cast report", c.report()))
+                android.widget.Toast.makeText(ctx, "Copied. Paste it in the chat.", android.widget.Toast.LENGTH_SHORT).show()
+            }, Modifier.fillMaxWidth().height(40.dp))
+        }
         Spacer(Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
             if (!live) TextKey("−10", { c.skip(-10_000) }, Modifier.weight(1f).height(42.dp))
