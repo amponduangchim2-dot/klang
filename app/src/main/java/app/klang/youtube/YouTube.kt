@@ -350,8 +350,20 @@ object YouTube {
         return r
     }
 
+    /**
+     * The video's own voice. YouTube adds machine-dubbed tracks (a Thai clip with an English voice)
+     * and may list them first for an English phone; keep the original language whenever it is marked.
+     */
+    private fun original(streams: List<AudioStream>): List<AudioStream> {
+        if (streams.size <= 1) return streams
+        streams.filter { it.audioTrackType == org.schabi.newpipe.extractor.stream.AudioTrackType.ORIGINAL }.let { if (it.isNotEmpty()) return it }
+        streams.filter { it.audioTrackName?.contains("original", ignoreCase = true) == true }.let { if (it.isNotEmpty()) return it }
+        // not marked as dubbed, described or secondary
+        return streams.filter { it.audioTrackType == null }.ifEmpty { streams }
+    }
+
     private fun pick(streams: List<AudioStream>, opus: Boolean): AudioStream? {
-        val direct = streams.filter { it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.isUrl }
+        val direct = original(streams).filter { it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.isUrl }
         val opusBest = direct.filter { it.format == MediaFormat.WEBMA_OPUS }.maxByOrNull { it.averageBitrate }
         val aacBest = direct.filter { it.format == MediaFormat.M4A }.maxByOrNull { it.averageBitrate }
         return (if (opus) opusBest ?: aacBest else aacBest ?: opusBest) ?: direct.maxByOrNull { it.averageBitrate }
@@ -381,7 +393,7 @@ object YouTube {
                 .groupBy { it.height }
                 .mapNotNull { (h, list) -> list.minByOrNull { rank(it.codec) }?.let { VideoQuality(h, it.content, it.codec.orEmpty()) } }
                 .sortedByDescending { it.height }
-            val audio = info.audioStreams
+            val audio = original(info.audioStreams)
                 .filter { it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.isUrl }
                 .let { list -> list.filter { it.format == MediaFormat.M4A }.maxByOrNull { it.averageBitrate } ?: list.maxByOrNull { it.averageBitrate } }
             val muxed = info.videoStreams
@@ -430,7 +442,7 @@ object YouTube {
                 .sortedWith(compareByDescending<org.schabi.newpipe.extractor.stream.VideoStream> { it.height }.thenBy { rank(it.codec) }.thenByDescending { it.bitrate })
                 .firstOrNull()
                 ?.let { DashRep(it.content, it.format?.mimeType ?: "video/mp4", it.codec.orEmpty(), it.bitrate, it.width, it.height, it.fps, it.initStart, it.initEnd, it.indexStart, it.indexEnd) }
-            val audio = info.audioStreams
+            val audio = original(info.audioStreams)
                 .filter { it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.isUrl && it.indexEnd > 0 && it.initEnd > 0 }
                 .let { list -> list.filter { it.format == MediaFormat.M4A }.maxByOrNull { it.averageBitrate } ?: list.maxByOrNull { it.averageBitrate } }
                 ?.let { DashRep(it.content, it.format?.mimeType ?: "audio/mp4", it.codec.orEmpty(), it.bitrate, 0, 0, 0, it.initStart, it.initEnd, it.indexStart, it.indexEnd) }
